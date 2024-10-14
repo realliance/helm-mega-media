@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "mega-media.fullname" . }}-test-connection"
+  labels:
+    {{- include "mega-media.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['{{ include "mega-media.fullname" . }}:{{ .Values.service.port }}']
+  restartPolicy: Never
