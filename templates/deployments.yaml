@@ -1,0 +1,1 @@
+{{- template "mega-media.deployment" (merge (dict "medianame" "plex") .) -}}

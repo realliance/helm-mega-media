@@ -7,5 +7,6 @@ pkgs.mkShell {
     pre-commit
     kustomize
     kubernetes-helm
+    minikube
   ];
 }
