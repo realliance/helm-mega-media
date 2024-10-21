@@ -1,15 +1,16 @@
 {{- define "mega-media.deployment" -}}
+{{- $nameInTable := merge (dict "name" .selected.name) . -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "mega-media.name" . }}
+  name: {{ include "mega-media.name" $nameInTable }}
   labels:
-    {{- include "mega-media.labels" . | nindent 4 }}
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "mega-media.selectorLabels" . | nindent 6 }}
+      {{- include "mega-media.selectorLabels" $nameInTable | nindent 6 }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -17,9 +18,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "mega-media.labels" . | nindent 8 }}
+        {{- include "mega-media.labels" $nameInTable | nindent 8 }}
         {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
+          {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
@@ -29,25 +30,30 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
-        - name: {{ .medianame }}
+        - name: {{ .selected.name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: "{{ .selected.image }}:{{ .selected.tag }}"
+          imagePullPolicy: {{ .selected.pullPolicy }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ .selected.port }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .Values.livenessProbe | nindent 12 }}
+            {{- toYaml .selected.livenessProbe | nindent 12 }}
           readinessProbe:
-            {{- toYaml .Values.readinessProbe | nindent 12 }}
+            {{- toYaml .selected.readinessProbe | nindent 12 }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml .selected.resources | nindent 12 }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{ if eq .arr "true" }}
+          envFrom:
+            - configMapRef:
+              name: {{ include "mega-media.name" (merge (dict "name" "arr-config") .) }}
+          {{ end }}
       {{- with .Values.volumes }}
       volumes:
         {{- toYaml . | nindent 8 }}

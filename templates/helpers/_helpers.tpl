@@ -2,7 +2,7 @@
 Expand the name of the chart.
 */}}
 {{- define "mega-media.name" -}}
-{{- printf "%s-%s" (default .Chart.Name .Values.nameOverride) .medianame | trunc 63 | trimSuffix "-" }}
+{{- printf "%s-%s" (default .Chart.Name .Values.nameOverride) .name | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
@@ -30,5 +30,5 @@ Selector labels
 {{- define "mega-media.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "mega-media.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
-media/service: {{ .medianame }}
+media/service: {{ .name }}
 {{- end }}
