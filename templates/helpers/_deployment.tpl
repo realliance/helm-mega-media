@@ -40,6 +40,22 @@ spec:
                 values:
                 - {{ .Release.Name }}
             topologyKey: kubernetes.io/hostname
+      {{ if eq .arr true }}
+      # https://wiki.servarr.com/sonarr/postgres-setup
+      initContainers:
+        - name: init-myservice
+          image: busybox:1.28
+          command: 
+            - 'sh'
+            - '-c'
+            - "echo '<PostgresPassword>$DB_PASSWORD</PostgresPassword>' > config.xml"
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-postgresql
+                  key: postgres-password
+      {{ end }}
       containers:
         - name: {{ .selected.name }}
           securityContext:
