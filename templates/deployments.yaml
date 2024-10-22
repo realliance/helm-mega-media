@@ -1,1 +1,9 @@
-{{- template "mega-media.deployment" (merge (dict "selected" .Values.images.sonarr "arr" "true") .) -}}
+{{- range keys .Values.images }}
+  {{- $tableSelect := get $.Values.images . -}}
+  {{ if eq $tableSelect.enabled true  }}
+    {{- $isArr := hasSuffix "arr" . -}}
+    ---
+    {{- template "mega-media.deployment" (merge (dict "selected" $tableSelect "arr" $isArr) $) -}}
+    
+  {{ end }}
+{{- end }}

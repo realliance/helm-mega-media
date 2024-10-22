@@ -1,5 +1,6 @@
 {{- define "mega-media.deployment" -}}
 {{- $nameInTable := merge (dict "name" .selected.name) . -}}
+{{- $mountMedia := or (eq .arr true) (eq (default false .selected.mountMedia) true) -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -29,6 +30,16 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: kubernetes.io/instance
+                operator: In
+                values:
+                - {{ .Release.Name }}
+            topologyKey: kubernetes.io/hostname
       containers:
         - name: {{ .selected.name }}
           securityContext:
@@ -40,34 +51,25 @@ spec:
               containerPort: {{ .selected.port }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml .selected.livenessProbe | nindent 12 }}
+            {{- toYaml (default .Values.arrProbes.livenessProbe .selected.livenessProbe) | nindent 12 }}
           readinessProbe:
-            {{- toYaml .selected.readinessProbe | nindent 12 }}
+            {{- toYaml (default .Values.arrProbes.readinessProbe .selected.readinessProbe) | nindent 12 }}
           resources:
             {{- toYaml .selected.resources | nindent 12 }}
-          {{- with .Values.volumeMounts }}
-          volumeMounts:
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{ if eq .arr "true" }}
+          {{ if eq .arr true }}
           envFrom:
             - configMapRef:
               name: {{ include "mega-media.name" (merge (dict "name" "arr-config") .) }}
           {{ end }}
-      {{- with .Values.volumes }}
+          {{ if $mountMedia }}
+          volumeMounts:
+          - mountPath: /media
+            name: media
+          {{ end }}
       volumes:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      {{ if $mountMedia }}
+      - name: media
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" (merge (dict "name" "media") .) }}
+      {{ end }}
 {{- end }}

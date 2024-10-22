@@ -6,11 +6,65 @@ postgresql: {}
 
 images:
   sonarr:
+    enabled: true
     name: sonarr
     image: ghcr.io/hotio/sonarr
-    pullPolicy: IfNotPresent
     tag: v4
+    pullPolicy: IfNotPresent
     port: 8989
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+  radarr:
+    enabled: true
+    name: radarr
+    image: ghcr.io/hotio/radarr
+    tag: release-5.12.2.9335
+    pullPolicy: IfNotPresent
+    port: 7878
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+  lidarr:
+    enabled: true
+    name: lidarr
+    image: ghcr.io/hotio/lidarr
+    tag: testing-0.4.1.2648
+    pullPolicy: IfNotPresent
+    port: 8686
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+  readarr:
+    enabled: true
+    name: readarr
+    image: ghcr.io/hotio/readarr
+    tag: testing-0.4.1.2648
+    pullPolicy: IfNotPresent
+    port: 8787
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+  jellyfin:
+    enabled: true
+    mountMedia: true
+    name: jellyfin
+    image: ghcr.io/hotio/jellyfin
+    tag: testing-0.4.1.2648
+    pullPolicy: IfNotPresent
+    port: 8096
     livenessProbe:
       httpGet:
         path: /
@@ -21,22 +75,26 @@ images:
         port: http
     resources:
       requests:
-        memory: 300Mi
-        cpu: 400m
+        memory: 4Gi
+        cpu: 1
       limits:
-        memory: 300Mi
-    env:
-    - name: PUID
-      value: '1000'
-    - name: GID
-      value: '1000'
-    - name: UMASK
-      value: '002'
-    - name: TZ
-      value: Etc/UTC
+        memory: 4Gi
+
+arrProbes:
+  livenessProbe:
+    httpGet:
+      path: /
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /
+      port: http
+
+mediaStorage:
+  storageClassName: ""
+  size: 10Gi
 
 podLabels: []
-
 podAnnotations: {}
 
 imagePullSecrets: []
@@ -54,20 +112,5 @@ securityContext: {}
   # runAsNonRoot: true
   # runAsUser: 1000
 
-# Additional volumes on the output Deployment definition.
-volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
-
-volumeMounts: []
-
 service:
   type: ClusterIP
-
-nodeSelector: {}
-
-tolerations: []
-
-affinity: {}
