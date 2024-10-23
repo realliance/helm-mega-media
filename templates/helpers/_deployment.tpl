@@ -1,6 +1,7 @@
 {{- define "mega-media.deployment" -}}
 {{- $nameInTable := merge (dict "name" .selected.name) . -}}
 {{- $mountMedia := or (eq .arr true) (eq (default false .selected.mountMedia) true) -}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,23 +33,32 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       affinity:
         podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: kubernetes.io/instance
-                operator: In
-                values:
-                - {{ .Release.Name }}
-            topologyKey: kubernetes.io/hostname
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 1
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: kubernetes.io/instance
+                  operator: In
+                  values:
+                  - {{ .Release.Name }}
+              topologyKey: kubernetes.io/hostname
       {{ if eq .arr true }}
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
+        - name: wait-for-db
+          image: docker.io/bitnami/postgresql:17
+          command:
+            - 'sh'
+            - '-e'
+            - '-c'
+            - 'until exec pg_isready -U "postgres" -h {{ .Release.Name }}-postgresql -p 5432; do sleep 1; done'
         - name: init-myservice
-          image: busybox:1.28
+          image: docker.io/busybox:1
           command: 
             - 'sh'
             - '-c'
-            - "echo '<PostgresPassword>$DB_PASSWORD</PostgresPassword>' > config.xml"
+            - "echo '<PostgresUser>postgres</PostgresUser><PostgresPassword>$DB_PASSWORD</PostgresPassword><PostgresPort>5432</PostgresPort><PostgresHost>{{ .Release.Name }}-postgresql</PostgresHost><PostgresMainDb>{{ .selected.name }}-main</PostgresMainDb><PostgresLogDb>{{ .selected.name }}-log</PostgresLogDb>' > config.xml"
           env:
             - name: DB_PASSWORD
               valueFrom:
@@ -72,18 +82,18 @@ spec:
             {{- toYaml (default .Values.arrProbes.readinessProbe .selected.readinessProbe) | nindent 12 }}
           resources:
             {{- toYaml .selected.resources | nindent 12 }}
-          {{ if eq .arr true }}
+          {{- if eq .arr true }}
           envFrom:
             - configMapRef:
-              name: {{ include "mega-media.name" (merge (dict "name" "arr-config") .) }}
+                name: {{ include "mega-media.name" (merge (dict "name" "arr-config") .) }}
           {{ end }}
-          {{ if $mountMedia }}
+          {{- if $mountMedia }}
           volumeMounts:
           - mountPath: /media
             name: media
-          {{ end }}
+          {{- end }}
       volumes:
-      {{ if $mountMedia }}
+      {{- if $mountMedia }}
       - name: media
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" (merge (dict "name" "media") .) }}

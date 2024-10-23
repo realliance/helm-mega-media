@@ -22,7 +22,7 @@ images:
     enabled: true
     name: radarr
     image: ghcr.io/hotio/radarr
-    tag: release-5.12.2.9335
+    tag: release
     pullPolicy: IfNotPresent
     port: 7878
     resources:
@@ -35,7 +35,7 @@ images:
     enabled: true
     name: lidarr
     image: ghcr.io/hotio/lidarr
-    tag: testing-0.4.1.2648
+    tag: testing
     pullPolicy: IfNotPresent
     port: 8686
     resources:
@@ -48,7 +48,7 @@ images:
     enabled: true
     name: readarr
     image: ghcr.io/hotio/readarr
-    tag: testing-0.4.1.2648
+    tag: testing
     pullPolicy: IfNotPresent
     port: 8787
     resources:
@@ -62,7 +62,7 @@ images:
     mountMedia: true
     name: jellyfin
     image: ghcr.io/hotio/jellyfin
-    tag: testing-0.4.1.2648
+    tag: release
     pullPolicy: IfNotPresent
     port: 8096
     livenessProbe:
@@ -82,6 +82,9 @@ images:
 
 arrProbes:
   livenessProbe:
+    # 30 Seconds for migration time
+    initialDelaySeconds: 30
+    periodSeconds: 5
     httpGet:
       path: /
       port: http
@@ -91,7 +94,7 @@ arrProbes:
       port: http
 
 mediaStorage:
-  storageClassName: ""
+  storageClassName: standard
   size: 10Gi
 
 podLabels: []
