@@ -10,5 +10,5 @@ Under most homelab storage scenarios, it is vastly more performant (and more lik
 to have your media storage use `ReadWriteOnce`, which will require all pods to be running on the same system.
 
 Therefore, this helm chart provides everything needed for a great media system while working under the assumption
-everything needs to run off the same system! We know this is really node ideal (trust us, we really do) but we really
+everything needs to run off the same system! We know this is really not ideal (trust us, we really do) but we really
 want those sweet, sweet r/w speeds.
