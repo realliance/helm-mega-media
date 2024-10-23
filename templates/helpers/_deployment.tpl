@@ -33,16 +33,14 @@ spec:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       affinity:
         podAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 1
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: kubernetes.io/instance
-                  operator: In
-                  values:
-                  - {{ .Release.Name }}
-              topologyKey: kubernetes.io/hostname
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app.kubernetes.io/instance
+                operator: In
+                values:
+                - {{ .Release.Name }}
+            topologyKey: kubernetes.io/hostname
       {{ if eq .arr true }}
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
