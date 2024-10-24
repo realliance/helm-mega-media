@@ -1,6 +1,17 @@
 {{- define "mega-media.deployment" -}}
 {{- $nameInTable := merge (dict "name" .selected.name) . -}}
-{{- $mountMedia := or (eq .arr true) (eq (default false .selected.mountMedia) true) -}}
+{{- $isArr := eq .arr true -}}
+{{- $mountMedia := or $isArr (eq (default false .selected.mountMedia) true) -}}
+{{- $apiKey := lower (randAlphaNum 32) -}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "mega-media.name" $nameInTable }}-api-key
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+data:
+  key: {{ b64enc $apiKey }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -41,7 +52,7 @@ spec:
                 values:
                 - {{ .Release.Name }}
             topologyKey: kubernetes.io/hostname
-      {{ if eq .arr true }}
+      {{ if $isArr }}
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
         - name: wait-for-db
@@ -51,18 +62,45 @@ spec:
             - '-e'
             - '-c'
             - 'until exec pg_isready -U "postgres" -h {{ .Release.Name }}-postgresql -p 5432; do sleep 1; done'
+        - name: create-tables-if-missing
+          image: docker.io/bitnami/postgresql:17
+          command:
+            - 'sh'
+            - '-e'
+            - '-c'
+            - 'psql -U postgres #TODO
         - name: init-myservice
           image: docker.io/busybox:1
           command: 
             - 'sh'
             - '-c'
-            - "echo '<PostgresUser>postgres</PostgresUser><PostgresPassword>$DB_PASSWORD</PostgresPassword><PostgresPort>5432</PostgresPort><PostgresHost>{{ .Release.Name }}-postgresql</PostgresHost><PostgresMainDb>{{ .selected.name }}-main</PostgresMainDb><PostgresLogDb>{{ .selected.name }}-log</PostgresLogDb>' > config.xml"
+            - |
+              echo '
+              <Config>
+                <BindAddress>*</BindAddress>
+                <Port>8787</Port>
+                <AuthenticationRequired>Disabled</AuthenticationRequired>
+                <Branch>develop</Branch>
+                <LogLevel>debug</LogLevel>
+                <UrlBase></UrlBase>
+                <ApiKey>{{ $apiKey }}</ApiKey>
+                <InstanceName>Readarr</InstanceName>
+                <PostgresUser>postgres</PostgresUser>
+                <PostgresPassword>$(DB_PASSWORD)</PostgresPassword>
+                <PostgresPort>5432</PostgresPort>
+                <PostgresHost>{{ .Release.Name }}-postgresql</PostgresHost>
+                <PostgresMainDb>{{ .selected.name }}-main</PostgresMainDb>
+                <PostgresLogDb>{{ .selected.name }}-log</PostgresLogDb>
+              </Config>' > /config/config.xml
           env:
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Release.Name }}-postgresql
                   key: postgres-password
+          volumeMounts:
+            - mountPath: /config
+              name: config
       {{ end }}
       containers:
         - name: {{ .selected.name }}
@@ -89,8 +127,17 @@ spec:
           volumeMounts:
           - mountPath: /media
             name: media
+          {{- if $isArr }}
+          - mountPath: /config/config.xml
+            name: config
+            subPath: config.xml
+          {{- end }}
           {{- end }}
       volumes:
+      {{- if $isArr }}
+      - name: config
+        emptyDir: {}
+      {{ end }}
       {{- if $mountMedia }}
       - name: media
         persistentVolumeClaim:
