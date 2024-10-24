@@ -62,13 +62,9 @@ spec:
             - '-e'
             - '-c'
             - 'until exec pg_isready -U "postgres" -h {{ .Release.Name }}-postgresql -p 5432; do sleep 1; done'
-        - name: create-tables-if-missing
-          image: docker.io/bitnami/postgresql:17
-          command:
-            - 'sh'
-            - '-e'
-            - '-c'
-            - 'psql -U postgres #TODO
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_main" .selected.name)) .) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_log" .selected.name)) .) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_cache" .selected.name)) .) | nindent 8 }}
         - name: init-myservice
           image: docker.io/busybox:1
           command: 
@@ -78,20 +74,20 @@ spec:
               echo '
               <Config>
                 <BindAddress>*</BindAddress>
-                <Port>8787</Port>
-                <AuthenticationRequired>Disabled</AuthenticationRequired>
+                <Port>{{ .selected.port }}</Port>
                 <Branch>develop</Branch>
                 <LogLevel>debug</LogLevel>
                 <UrlBase></UrlBase>
                 <ApiKey>{{ $apiKey }}</ApiKey>
-                <InstanceName>Readarr</InstanceName>
+                <InstanceName>{{ .Release.Name }}</InstanceName>
                 <PostgresUser>postgres</PostgresUser>
                 <PostgresPassword>$(DB_PASSWORD)</PostgresPassword>
                 <PostgresPort>5432</PostgresPort>
                 <PostgresHost>{{ .Release.Name }}-postgresql</PostgresHost>
-                <PostgresMainDb>{{ .selected.name }}-main</PostgresMainDb>
-                <PostgresLogDb>{{ .selected.name }}-log</PostgresLogDb>
-              </Config>' > /config/config.xml
+                <PostgresMainDb>{{ .selected.name }}_main</PostgresMainDb>
+                <PostgresLogDb>{{ .selected.name }}_log</PostgresLogDb>
+                <PostgresCacheDb>{{ .selected.name }}_cache</PostgresCacheDb>
+              </Config>' > /config/config.xml && chmod 664 /config/config.xml
           env:
             - name: DB_PASSWORD
               valueFrom:
@@ -136,7 +132,8 @@ spec:
       volumes:
       {{- if $isArr }}
       - name: config
-        emptyDir: {}
+        emptyDir:
+          medium: Memory
       {{ end }}
       {{- if $mountMedia }}
       - name: media

@@ -32,3 +32,23 @@ app.kubernetes.io/name: {{ include "mega-media.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 media/service: {{ .name }}
 {{- end }}
+
+{{/*
+Postgres Init Db
+*/}}
+{{- define "mega-media.initDb" -}}
+- name: create-{{ kebabcase .database }}-if-missing
+  image: docker.io/bitnami/postgresql:17
+  command:
+  - 'sh'
+  - '-e'
+  - '-c'
+  - |
+      PGPASSWORD=$(DB_PASSWORD) psql -U postgres -h {{ .Release.Name }}-postgresql -p 5432 -tc "SELECT 1 FROM pg_database WHERE datname = '{{ .database }}'" | grep -q 1 || PGPASSWORD=$(DB_PASSWORD) psql -U postgres -h {{ .Release.Name }}-postgresql -p 5432 -c "CREATE DATABASE {{ .database }}"
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ .Release.Name }}-postgresql
+          key: postgres-password
+{{- end }}
