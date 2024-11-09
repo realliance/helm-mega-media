@@ -8,7 +8,7 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  storageClassName: {{ .Values.mediaStorage.storageClassName }}
+  storageClassName: {{ .Values.media.storageClassName }}
   resources:
     requests:
-      storage: {{ .Values.mediaStorage.size }}
+      storage: {{ .Values.media.size }}

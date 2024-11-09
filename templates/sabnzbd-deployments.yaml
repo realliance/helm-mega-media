@@ -1,0 +1,97 @@
+
+{{- with .Values.sabnzbd -}}
+{{- $contextWithName := merge (dict "name" "sabnzbd") $ -}}
+{{- $apiKey := lower (randAlphaNum 64) -}}
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mega-media.name" $contextWithName }}
+  labels:
+    {{- include "mega-media.labels" $contextWithName | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mega-media.selectorLabels" $contextWithName | nindent 6 }}
+  template:
+    metadata:
+      {{- with $.Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "mega-media.labels" $contextWithName | nindent 8 }}
+        {{- with $.Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      affinity:
+        {{- include "mega-media.sameNodePodAffinity" $contextWithName | nindent 10 }}
+      initContainers:
+        {{- range .servers -}}
+          {{- include "mega-media.sabnzbd.server" . | nindent 8 }}
+        {{- end }}
+        - name: init-ini
+          image: docker.io/busybox:1
+          command: 
+            - 'sh'
+            - '-c'
+            - |
+              echo '
+
+              {{ .ini | indent 14 }}
+              api_key = {{ $apiKey | quote }}
+              nzb_key = {{ $apiKey | quote }}
+              host_whitelist = $(cat /etc/hostname)
+              [servers]
+              $(cat /config/stub-*)
+              ' > /config/sabnzbd.ini && chmod 664 /config/sabnzbd.ini
+          volumeMounts:
+            - mountPath: /config
+              name: config-file
+      containers:
+        - name: sabnzbd
+          image: "{{ .image }}:{{ .tag }}"
+          imagePullPolicy: {{ .pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          livenessProbe:
+            {{- .livenessProbe | toYaml | nindent 12 }}
+          readinessProbe:
+            {{- .readinessProbe | toYaml | nindent 12 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          volumeMounts:
+          - mountPath: /media
+            name: media
+          - mountPath: /config
+            name: config
+      volumes:
+      - name: config-file
+        emptyDir:
+          medium: Memory
+      - name: media
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" (merge (dict "name" "media") $) }}
+      - name: config
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" $contextWithName }}-config
+
+{{- with .config -}}
+{{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size ) $contextWithName) }}
+{{- end }}
+
+{{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
+{{ template "mega-media.api-key-secret" (merge (dict "apiKey" $apiKey) $contextWithName) }}
+
+{{- end }}

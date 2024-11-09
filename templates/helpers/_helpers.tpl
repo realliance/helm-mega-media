@@ -34,6 +34,21 @@ media/service: {{ .name }}
 {{- end }}
 
 {{/*
+Same Node Pod Affinity
+*/}}
+{{- define "mega-media.sameNodePodAffinity" -}}
+podAffinity:
+  requiredDuringSchedulingIgnoredDuringExecution:
+  - labelSelector:
+      matchExpressions:
+      - key: app.kubernetes.io/instance
+        operator: In
+        values:
+        - {{ .Release.Name }}
+    topologyKey: kubernetes.io/hostname
+{{- end }}
+
+{{/*
 Postgres Init Db
 */}}
 {{- define "mega-media.initDb" -}}

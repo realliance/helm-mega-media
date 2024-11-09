@@ -1,10 +1,5 @@
-{{- define "mega-media.deployment" -}}
+{{- define "mega-media.arr.deployment" -}}
 {{- $nameInTable := merge (dict "name" .selected.name) . -}}
-{{- $isArr := eq .arr true -}}
-{{- $mountMedia := or $isArr (eq (default false .selected.mountMedia) true) -}}
-{{- $configMount := eq .selected.configMount.enabled true -}}
-{{- $genApiKey := eq .selected.overrideGenApiKey.enabled true | default false -}}
-{{- $apiKey := lower (randAlphaNum 32) -}}
 
 {{- $db_host := .Values.postgresql.enabled | ternary (printf "%s-postgresql" .Release.Name) .Values.externalPostgres.host -}}
 {{- $db_port := .Values.postgresql.enabled | ternary "5432" .Values.externalPostgres.port -}}
@@ -12,17 +7,7 @@
 {{- $db_secret_name := .Values.postgresql.enabled | ternary (printf "%s-postgresql" .Release.Name) .Values.externalPostgres.passwordFromSecretKeyRef.name -}}
 {{- $db_secret_key := .Values.postgresql.enabled | ternary "postgres-password" .Values.externalPostgres.passwordFromSecretKeyRef.key -}}
 {{- $db_dict := dict "host" $db_host "port" $db_port "user" $db_user "secret_name" $db_secret_name "secret_key" $db_secret_key -}}
-{{ if or $isArr $genApiKey }}
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: {{ include "mega-media.name" $nameInTable }}-api-key
-  labels:
-    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
-data:
-  key: {{ b64enc $apiKey }}
-{{ end }}
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -54,16 +39,7 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-          - labelSelector:
-              matchExpressions:
-              - key: app.kubernetes.io/instance
-                operator: In
-                values:
-                - {{ .Release.Name }}
-            topologyKey: kubernetes.io/hostname
-      {{ if $isArr }}
+        {{- include "mega-media.sameNodePodAffinity" . | nindent 8 }}
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
         - name: wait-for-db
@@ -89,7 +65,7 @@ spec:
                 <Branch>develop</Branch>
                 <LogLevel>debug</LogLevel>
                 <UrlBase></UrlBase>
-                <ApiKey>{{ $apiKey }}</ApiKey>
+                <ApiKey>{{ .apiKey }}</ApiKey>
                 <AuthenticationMethod>External</AuthenticationMethod>
                 <InstanceName>{{ .Release.Name }}</InstanceName>
                 <PostgresUser>{{ $db_user }}</PostgresUser>
@@ -109,11 +85,8 @@ spec:
           volumeMounts:
             - mountPath: /config
               name: config
-      {{ end }}
       containers:
         - name: {{ .selected.name }}
-          securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .selected.image }}:{{ .selected.tag }}"
           imagePullPolicy: {{ .selected.pullPolicy }}
           ports:
@@ -121,87 +94,25 @@ spec:
               containerPort: {{ .selected.port }}
               protocol: TCP
           livenessProbe:
-            {{- toYaml (default .Values.arrProbes.livenessProbe .selected.livenessProbe) | nindent 12 }}
+            {{- .selected.livenessProbe | default .Values.arrs.probes.livenessProbe | toYaml | nindent 12 }}
           readinessProbe:
-            {{- toYaml (default .Values.arrProbes.readinessProbe .selected.readinessProbe) | nindent 12 }}
+            {{- .selected.readinessProbe | default .Values.arrs.probes.readinessProbe | toYaml | nindent 12 }}
           resources:
             {{- toYaml .selected.resources | nindent 12 }}
-          {{- if eq .arr true }}
           envFrom:
             - configMapRef:
                 name: {{ include "mega-media.name" (merge (dict "name" "arr-config") .) }}
-          {{ end }}
-          {{- if (.selected.env | empty | not) | or $genApiKey }}
-          env:
-            - name: SHIM
-              value: ""
-            {{- toYaml .selected.env | nindent 12 }}
-            {{ if $genApiKey }}
-            - name: {{ .selected.overrideGenApiKey.env }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mega-media.name" $nameInTable }}-api-key
-                  key: key
-            {{- end }}
-          {{- end }}
-          {{- if $mountMedia }}
           volumeMounts:
           - mountPath: /media
             name: media
-          {{- if $isArr }}
           - mountPath: /config/config.xml
             name: config
             subPath: config.xml
-          {{- end }}
-          {{- if $configMount }}
-          - name: config
-            mountPath: {{ .selected.configMount.path }}
-          {{- end }}
-          {{- end }}
       volumes:
-      {{- if $isArr }}
       - name: config
         emptyDir:
           medium: Memory
-      {{ end }}
-      {{- if $mountMedia }}
       - name: media
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" (merge (dict "name" "media") .) }}
-      {{ end }}
-      {{- if $configMount }}
-      - name: config
-        persistentVolumeClaim:
-          claimName: {{ include "mega-media.name" (merge (dict "name" .selected.name) .) }}
-      {{- end }}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ include "mega-media.name" $nameInTable }}
-  labels:
-    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
-spec:
-  selector:
-    {{- include "mega-media.selectorLabels" $nameInTable | nindent 6 }}
-  ports:
-    - protocol: TCP
-      port: {{ .selected.port }}
-      targetPort: http
-{{ if $configMount -}}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: {{ include "mega-media.name" (merge (dict "name" .selected.name) .) }}
-  labels:
-    {{- include "mega-media.labels" (merge (dict "name" .selected.name) .) | nindent 4 }}
-spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: {{ .selected.configMount.storageClassName }}
-  resources:
-    requests:
-      storage: {{ .selected.configMount.size }}
-{{- end -}}
 {{- end }}
