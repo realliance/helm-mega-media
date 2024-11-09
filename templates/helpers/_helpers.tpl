@@ -37,7 +37,6 @@ media/service: {{ .name }}
 Postgres Init Db
 */}}
 {{- define "mega-media.initDb" -}}
-{{- $db := printf "%s-postgresql" .Release.Name -}}
 - name: create-{{ kebabcase .database }}-if-missing
   image: docker.io/bitnami/postgresql:17
   command:
@@ -45,11 +44,11 @@ Postgres Init Db
   - '-e'
   - '-c'
   - |
-      echo $(DB_PASSWORD) && PGPASSWORD="$(DB_PASSWORD)" psql -U postgres -h {{ $db }} -p 5432 -tc "SELECT 1 FROM pg_database WHERE datname = '{{ .database }}'" | grep -q 1 || PGPASSWORD="$(DB_PASSWORD)" psql -U postgres -h {{ $db }} -p 5432 -c "CREATE DATABASE {{ .database }}"
+      echo $(DB_PASSWORD) && PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -tc "SELECT 1 FROM pg_database WHERE datname = '{{ .database }}'" | grep -q 1 || PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -c "CREATE DATABASE {{ .database }}"
   env:
     - name: DB_PASSWORD
       valueFrom:
         secretKeyRef:
-          name: {{ $db }}
-          key: postgres-password
+          name: {{ .db_config.secret_name }}
+          key: {{ .db_config.secret_key }}
 {{- end }}

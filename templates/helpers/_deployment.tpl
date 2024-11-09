@@ -3,6 +3,13 @@
 {{- $isArr := eq .arr true -}}
 {{- $mountMedia := or $isArr (eq (default false .selected.mountMedia) true) -}}
 {{- $apiKey := lower (randAlphaNum 32) -}}
+
+{{- $db_host := .Values.postgresql.enabled | ternary (printf "%s-postgresql" .Release.Name) .Values.externalPostgres.host -}}
+{{- $db_port := .Values.postgresql.enabled | ternary "5432" .Values.externalPostgres.port -}}
+{{- $db_user := .Values.postgresql.enabled | ternary "postgres" .Values.externalPostgres.username -}}
+{{- $db_secret_name := .Values.postgresql.enabled | ternary (printf "%s-postgresql" .Release.Name) .Values.externalPostgres.passwordFromSecretKeyRef.name -}}
+{{- $db_secret_key := .Values.postgresql.enabled | ternary "postgres-password" .Values.externalPostgres.passwordFromSecretKeyRef.key -}}
+{{- $db_dict := dict "host" $db_host "port" $db_port "user" $db_user "secret_name" $db_secret_name "secret_key" $db_secret_key -}}
 ---
 apiVersion: v1
 kind: Secret
@@ -62,9 +69,9 @@ spec:
             - '-e'
             - '-c'
             - 'until pg_isready -U "postgres" -h {{ .Release.Name }}-postgresql -p 5432; do sleep 1; done'
-        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_main" .selected.name)) .) | nindent 8 }}
-        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_log" .selected.name)) .) | nindent 8 }}
-        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_cache" .selected.name)) .) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_main" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_log" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_cache" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
         - name: init-myservice
           image: docker.io/busybox:1
           command: 
@@ -80,10 +87,10 @@ spec:
                 <UrlBase></UrlBase>
                 <ApiKey>{{ $apiKey }}</ApiKey>
                 <InstanceName>{{ .Release.Name }}</InstanceName>
-                <PostgresUser>postgres</PostgresUser>
+                <PostgresUser>{{ $db_user }}</PostgresUser>
                 <PostgresPassword>$(DB_PASSWORD)</PostgresPassword>
-                <PostgresPort>5432</PostgresPort>
-                <PostgresHost>{{ .Release.Name }}-postgresql</PostgresHost>
+                <PostgresPort>{{ $db_port }}</PostgresPort>
+                <PostgresHost>{{ $db_host }}</PostgresHost>
                 <PostgresMainDb>{{ .selected.name }}_main</PostgresMainDb>
                 <PostgresLogDb>{{ .selected.name }}_log</PostgresLogDb>
                 <PostgresCacheDb>{{ .selected.name }}_cache</PostgresCacheDb>
@@ -92,8 +99,8 @@ spec:
             - name: DB_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Release.Name }}-postgresql
-                  key: postgres-password
+                  name: {{ $db_secret_name }}
+                  key: {{ $db_secret_key }}
           volumeMounts:
             - mountPath: /config
               name: config
