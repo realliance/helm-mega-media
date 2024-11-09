@@ -25,12 +25,16 @@ images:
     tag: v4
     pullPolicy: IfNotPresent
     port: 8989
+    overrideGenApiKey:
+      enabled: false
     resources:
       requests:
         memory: 300Mi
         cpu: 400m
       limits:
         memory: 300Mi
+    configMount:
+      enabled: false
   radarr:
     enabled: true
     name: radarr
@@ -38,12 +42,16 @@ images:
     tag: release
     pullPolicy: IfNotPresent
     port: 7878
+    overrideGenApiKey:
+      enabled: false
     resources:
       requests:
         memory: 300Mi
         cpu: 400m
       limits:
         memory: 300Mi
+    configMount:
+      enabled: false
   lidarr:
     enabled: true
     name: lidarr
@@ -51,12 +59,16 @@ images:
     tag: testing
     pullPolicy: IfNotPresent
     port: 8686
+    overrideGenApiKey:
+      enabled: false
     resources:
       requests:
         memory: 300Mi
         cpu: 400m
       limits:
         memory: 300Mi
+    configMount:
+      enabled: false
   readarr:
     enabled: true
     name: readarr
@@ -64,12 +76,16 @@ images:
     tag: testing
     pullPolicy: IfNotPresent
     port: 8787
+    overrideGenApiKey:
+      enabled: false
     resources:
       requests:
         memory: 300Mi
         cpu: 400m
       limits:
         memory: 300Mi
+    configMount:
+      enabled: false
   jellyfin:
     enabled: true
     mountMedia: true
@@ -78,6 +94,8 @@ images:
     tag: release
     pullPolicy: IfNotPresent
     port: 8096
+    overrideGenApiKey:
+      enabled: false
     livenessProbe:
       httpGet:
         path: /
@@ -92,6 +110,48 @@ images:
         cpu: 1
       limits:
         memory: 4Gi
+    configMount:
+      enabled: true
+      path: /config
+      storageClassName: standard
+      size: 1Gi
+  sabnzbd:
+    enabled: true
+    mountSabnzbdConfig: true
+    mountMedia: true
+    overrideGenApiKey:
+      enabled: true
+      env: SAB_API_KEY
+    name: sabnzbd
+    image: ghcr.io/hotio/sabnzbd
+    tag: release
+    pullPolicy: IfNotPresent
+    port: 8080
+    livenessProbe:
+      httpGet:
+        path: /
+        port: http
+    readinessProbe:
+      httpGet:
+        path: /
+        port: http
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+    env:
+      - name: WEBUI_PORTS
+        value: 8080/tcp,8080/udp
+      - name: ARGS
+        value: ""
+    configMount:
+      enabled: true
+      path: /config
+      storageClassName: standard
+      size: 1Gi
+
 
 arrProbes:
   livenessProbe:
