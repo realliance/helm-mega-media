@@ -149,16 +149,13 @@ sabnzbd:
       port: 563
       timeout: 60
       usernameFromSecretKeyRef:
-        name: name
-        key: key
+        name: usenet-user-pass
+        key: username
       passwordFromSecretKeyRef:
-        name: name
-        key: key
+        name: usenet-user-pass
+        key: password
       connections: 8
   ini: |
-    __version__ = 19
-    __encoding__ = utf-8
-    [misc]
     helpful_warnings = 1
     queue_complete = ""
     queue_complete_pers = 0

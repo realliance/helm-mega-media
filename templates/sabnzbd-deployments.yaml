@@ -1,5 +1,6 @@
 
 {{- with .Values.sabnzbd -}}
+{{- if .enabled -}}
 {{- $contextWithName := merge (dict "name" "sabnzbd") $ -}}
 {{- $apiKey := lower (randAlphaNum 64) -}}
 
@@ -45,18 +46,33 @@ spec:
             - 'sh'
             - '-c'
             - |
+              if [ ! -f /config/sabnzbd.ini ]
+              then       
               echo '
-
-              {{ .ini | indent 14 }}
+              __version__ = 19
+              __encoding__ = utf-8
+              [misc]
               api_key = {{ $apiKey | quote }}
               nzb_key = {{ $apiKey | quote }}
-              host_whitelist = $(cat /etc/hostname)
+              ' > /config/sabnzbd.ini && chmod 666 /config/sabnzbd.ini
+
+              echo '
+              {{ .ini | indent 14 }}
+              ' >> /config/sabnzbd.ini
+
+              echo "
               [servers]
-              $(cat /config/stub-*)
-              ' > /config/sabnzbd.ini && chmod 664 /config/sabnzbd.ini
+              $(cat /config-stubs/stub-*)
+              " >> /config/sabnzbd.ini
+
+              cp /config/sabnzbd.ini /config/sabnzbd.ini.clone
+              fi
+              cat /config/sabnzbd.ini
           volumeMounts:
-            - mountPath: /config
+            - mountPath: /config-stubs
               name: config-file
+            - mountPath: /config
+              name: config
       containers:
         - name: sabnzbd
           image: "{{ .image }}:{{ .tag }}"
@@ -76,6 +92,9 @@ spec:
             name: media
           - mountPath: /config
             name: config
+      envFrom:
+      - configMapRef:
+          name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
       volumes:
       - name: config-file
         emptyDir:
@@ -87,11 +106,11 @@ spec:
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" $contextWithName }}-config
 
-{{- with .config -}}
+{{ with .config -}}
 {{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size ) $contextWithName) }}
 {{- end }}
 
 {{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
 {{ template "mega-media.api-key-secret" (merge (dict "apiKey" $apiKey) $contextWithName) }}
-
+{{- end }}
 {{- end }}
