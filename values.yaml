@@ -43,6 +43,21 @@ arrs:
         cpu: 400m
       limits:
         memory: 300Mi
+        indexConfig:
+    search:
+      syncCategories:
+        - 5000
+        - 5010
+        - 5020
+        - 5030
+        - 5040
+        - 5045
+        - 5050
+        - 5090
+      animeSyncCategories:
+        - 5070
+      syncAnimeStandardFormatSearch: true
+      syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   radarr:
     enabled: true
     name: radarr
@@ -56,6 +71,11 @@ arrs:
         cpu: 400m
       limits:
         memory: 300Mi
+    search:
+      syncCategories: []
+      animeSyncCategories: []
+      syncAnimeStandardFormatSearch: true
+      syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   lidarr:
     enabled: true
     name: lidarr
@@ -69,6 +89,11 @@ arrs:
         cpu: 400m
       limits:
         memory: 300Mi
+    search:
+      syncCategories: []
+      animeSyncCategories: []
+      syncAnimeStandardFormatSearch: true
+      syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   readarr:
     enabled: true
     name: readarr
@@ -76,6 +101,24 @@ arrs:
     tag: testing
     pullPolicy: IfNotPresent
     port: 8787
+    resources:
+      requests:
+        memory: 300Mi
+        cpu: 400m
+      limits:
+        memory: 300Mi
+    search:
+      syncCategories: []
+      animeSyncCategories: []
+      syncAnimeStandardFormatSearch: true
+      syncRejectBlocklistedTorrentHashesWhileGrabbing: true
+  prowlarr:
+    enabled: true
+    name: prowlarr
+    image: ghcr.io/hotio/prowlarr
+    tag: release
+    pullPolicy: IfNotPresent
+    port: 9696
     resources:
       requests:
         memory: 300Mi
