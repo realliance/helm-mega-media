@@ -92,9 +92,9 @@ spec:
             name: media
           - mountPath: /config
             name: config
-      envFrom:
-      - configMapRef:
-          name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
+          envFrom:
+          - configMapRef:
+              name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
       volumes:
       - name: config-file
         emptyDir:

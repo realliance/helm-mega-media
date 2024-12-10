@@ -1,6 +1,5 @@
 {{- define "mega-media.arr.deployment" -}}
 {{- $nameInTable := merge (dict "name" .selected.name) . -}}
-{{- $isProwlarr := eq .selected.name "prowlarr"  -}}
 
 {{- $db_host := .Values.postgresql.enabled | ternary (printf "%s-postgresql" .Release.Name) .Values.externalPostgres.host -}}
 {{- $db_port := .Values.postgresql.enabled | ternary "5432" .Values.externalPostgres.port -}}
@@ -53,9 +52,6 @@ spec:
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_main" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_log" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_cache" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
-        {{- if $isProwlarr -}}
-        {{- include "mega-media.insert.apps" (merge (dict "database" (printf "%s_main" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
-        {{- end }}
         - name: init-myservice
           image: docker.io/busybox:1
           command: 

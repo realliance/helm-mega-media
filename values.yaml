@@ -43,7 +43,6 @@ arrs:
         cpu: 400m
       limits:
         memory: 300Mi
-        indexConfig:
     search:
       syncCategories:
         - 5000
@@ -72,9 +71,8 @@ arrs:
       limits:
         memory: 300Mi
     search:
-      syncCategories: []
-      animeSyncCategories: []
-      syncAnimeStandardFormatSearch: true
+      syncCategories:
+        - 2000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   lidarr:
     enabled: true
@@ -90,9 +88,8 @@ arrs:
       limits:
         memory: 300Mi
     search:
-      syncCategories: []
-      animeSyncCategories: []
-      syncAnimeStandardFormatSearch: true
+      syncCategories:
+        - 3000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   readarr:
     enabled: true
@@ -108,9 +105,8 @@ arrs:
       limits:
         memory: 300Mi
     search:
-      syncCategories: []
-      animeSyncCategories: []
-      syncAnimeStandardFormatSearch: true
+      syncCategories:
+        - 7000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   prowlarr:
     enabled: true
