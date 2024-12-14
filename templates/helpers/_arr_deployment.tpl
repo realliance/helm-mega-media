@@ -48,7 +48,7 @@ spec:
             - 'sh'
             - '-e'
             - '-c'
-            - 'until pg_isready -U "postgres" -h {{ .Release.Name }}-postgresql -p 5432; do sleep 1; done'
+            - 'until pg_isready -U "postgres" -h {{ $db_host }} -p 5432; do sleep 1; done'
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_main" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_log" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
         {{- include "mega-media.initDb" (merge (dict "database" (printf "%s_cache" .selected.name) "db_config" $db_dict) .) | nindent 8 }}
