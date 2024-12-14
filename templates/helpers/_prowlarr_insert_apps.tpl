@@ -7,6 +7,7 @@
   - '-c'
   - |
       PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -d {{ .database }} -tc 'TRUNCATE TABLE "Applications";'
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -d {{ .database }} -tc 'TRUNCATE TABLE "Indexers";'
   env:
     - name: DB_PASSWORD
       valueFrom:
@@ -44,5 +45,28 @@
         secretKeyRef:
           name: {{ include "mega-media.name" (merge (dict "name" $tableSelect.name) $) }}-api-key
           key: key
+{{- end }}
+{{- range $.Values.arrs.prowlarr.indexers }}
+{{- $configContract := print .type "Settings" }}
+- name: insert-{{ kebabcase .name }}-indexer
+  image: docker.io/bitnami/postgresql:17
+  command:
+  - 'sh'
+  - '-e'
+  - '-c'
+  - |
+      export CONFIG=$(echo "{{ .settings | mustToJson | quote }}")
+      echo $CONFIG
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $database }} -tc "INSERT INTO \"Indexers\" (\"Name\", \"Implementation\", \"Settings\", \"ConfigContract\", \"Enable\", \"Priority\", \"Added\", \"Tags\") VALUES ({{ .name | squote }}, {{ .type | squote }}, '$CONFIG', {{ $configContract | squote }}, {{ .enabled }}, {{ .priority }}, NOW(), '[]');"
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ $db_config.secret_name }}
+          key: {{ $db_config.secret_key }}
+    - name: API_KEY
+      valueFrom:
+        secretKeyRef:
+          {{ toYaml .apiKeyFromSecretKeyRef | nindent 10 }}
 {{- end }}
 {{- end }}

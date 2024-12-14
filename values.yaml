@@ -121,6 +121,384 @@ arrs:
         cpu: 400m
       limits:
         memory: 300Mi
+    indexers:
+      - name: NZBGeek
+        enabled: true
+        type: Newznab
+        priority: 25
+        apiKeyFromSecretKeyRef:
+          name: nzb-api-keys
+          key: nzb-geek
+        settings:
+          baseUrl: https://api.nzbgeek.info
+          apiPath: /api
+          apiKey: $API_KEY
+          vipExpiration: ""
+          baseSettings:
+            limitsUnit: 0
+          capabilities:
+            supportsRawSearch: false
+            searchParams:
+              - q
+            tvSearchParams:
+              - q
+              - rId
+              - tvdbId
+              - season
+              - ep
+            movieSearchParams:
+              - q
+              - imdbId
+              - genre
+            musicSearchParams:
+              - q
+            bookSearchParams: []
+            categories:
+            - id: 1000
+              name: Console
+              subCategories: []
+            - id: 1010
+              name: Console/NDS
+              subCategories: []
+            - id: 1020
+              name: Console/PSP
+              subCategories: []
+            - id: 1030
+              name: Console/Wii
+              subCategories: []
+            - id: 1090
+              name: Console/Other
+              subCategories: []
+            - id: 1040
+              name: Console/XBox
+              subCategories: []
+            - id: 1050
+              name: Console/XBox 360
+              subCategories: []
+            - id: 1060
+              name: Console/Wiiware
+              subCategories: []
+            - id: 1070
+              name: Console/XBox 360 DLC
+              subCategories: []
+            - id: 1080
+              name: Console/PS3
+              subCategories: []
+            - id: 1140
+              name: Console/XBox One
+              subCategories: []
+            - id: 1180
+              name: Console/PS4
+              subCategories: []
+            - id: 1110
+              name: Console/3DS
+              subCategories: []
+            - id: 101010
+              name: Console/NDS
+              subCategories: []
+            - id: 101020
+              name: Console/PSP
+              subCategories: []
+            - id: 101030
+              name: Console/Wii
+              subCategories: []
+            - id: 101035
+              name: Console/Switch
+              subCategories: []
+            - id: 101040
+              name: Console/Xbox
+              subCategories: []
+            - id: 101050
+              name: Console/Xbox 360
+              subCategories: []
+            - id: 101060
+              name: Console/WiiWare/VC
+              subCategories: []
+            - id: 101070
+              name: Console/XBOX 360 DLC
+              subCategories: []
+            - id: 101080
+              name: Console/PS3
+              subCategories: []
+            - id: 101090
+              name: Console/Xbox One
+              subCategories: []
+            - id: 101100
+              name: Console/PS4
+              subCategories: []
+            - id: 101110
+              name: Console/NSW
+              subCategories: []
+            - id: 101000
+              name: Console
+              subCategories: []
+            - id: 2000
+              name: Movies
+              subCategories: []
+            - id: 2010
+              name: Movies/Foreign
+              subCategories: []
+            - id: 2020
+              name: Movies/Other
+              subCategories: []
+            - id: 2030
+              name: Movies/SD
+              subCategories: []
+            - id: 2040
+              name: Movies/HD
+              subCategories: []
+            - id: 2045
+              name: Movies/UHD
+              subCategories: []
+            - id: 2050
+              name: Movies/BluRay
+              subCategories: []
+            - id: 2060
+              name: Movies/3D
+              subCategories: []
+            - id: 102010
+              name: Movies/Foreign
+              subCategories: []
+            - id: 102020
+              name: Movies/Other
+              subCategories: []
+            - id: 102030
+              name: Movies/SD
+              subCategories: []
+            - id: 102040
+              name: Movies/HD
+              subCategories: []
+            - id: 102045
+              name: Movies/UHD
+              subCategories: []
+            - id: 102050
+              name: Movies/BluRay
+              subCategories: []
+            - id: 102060
+              name: Movies/3D
+              subCategories: []
+            - id: 102000
+              name: Movies
+              subCategories: []
+            - id: 3000
+              name: Audio
+              subCategories: []
+            - id: 3010
+              name: Audio/MP3
+              subCategories: []
+            - id: 3020
+              name: Audio/Video
+              subCategories: []
+            - id: 3030
+              name: Audio/Audiobook
+              subCategories: []
+            - id: 3040
+              name: Audio/Lossless
+              subCategories: []
+            - id: 103010
+              name: Audio/MP3
+              subCategories: []
+            - id: 103020
+              name: Audio/Video
+              subCategories: []
+            - id: 103030
+              name: Audio/Audiobook
+              subCategories: []
+            - id: 103040
+              name: Audio/Lossless
+              subCategories: []
+            - id: 103000
+              name: Audio
+              subCategories: []
+            - id: 4000
+              name: PC
+              subCategories: []
+            - id: 4010
+              name: PC/0day
+              subCategories: []
+            - id: 4020
+              name: PC/ISO
+              subCategories: []
+            - id: 4030
+              name: PC/Mac
+              subCategories: []
+            - id: 4040
+              name: PC/Mobile-Other
+              subCategories: []
+            - id: 4050
+              name: PC/Games
+              subCategories: []
+            - id: 4060
+              name: PC/Mobile-iOS
+              subCategories: []
+            - id: 4070
+              name: PC/Mobile-Android
+              subCategories: []
+            - id: 104010
+              name: PC/0day
+              subCategories: []
+            - id: 104020
+              name: PC/ISO
+              subCategories: []
+            - id: 104030
+              name: PC/Mac
+              subCategories: []
+            - id: 104040
+              name: PC/Mobile-Other
+              subCategories: []
+            - id: 104050
+              name: PC/Games
+              subCategories: []
+            - id: 104060
+              name: PC/Mobile-iOS
+              subCategories: []
+            - id: 104070
+              name: PC/Mobile-Android
+              subCategories: []
+            - id: 104000
+              name: PC
+              subCategories: []
+            - id: 5000
+              name: TV
+              subCategories: []
+            - id: 5020
+              name: TV/Foreign
+              subCategories: []
+            - id: 5030
+              name: TV/SD
+              subCategories: []
+            - id: 5040
+              name: TV/HD
+              subCategories: []
+            - id: 5045
+              name: TV/UHD
+              subCategories: []
+            - id: 5050
+              name: TV/Other
+              subCategories: []
+            - id: 5060
+              name: TV/Sport
+              subCategories: []
+            - id: 5070
+              name: TV/Anime
+              subCategories: []
+            - id: 5080
+              name: TV/Documentary
+              subCategories: []
+            - id: 105020
+              name: TV/Foreign
+              subCategories: []
+            - id: 105030
+              name: TV/SD
+              subCategories: []
+            - id: 105040
+              name: TV/HD
+              subCategories: []
+            - id: 105045
+              name: TV/UHD
+              subCategories: []
+            - id: 105050
+              name: TV/Other
+              subCategories: []
+            - id: 105060
+              name: TV/Sport
+              subCategories: []
+            - id: 105070
+              name: TV/Anime
+              subCategories: []
+            - id: 105080
+              name: TV/Documentary
+              subCategories: []
+            - id: 105000
+              name: TV
+              subCategories: []
+            - id: 6000
+              name: XXX
+              subCategories: []
+            - id: 6010
+              name: XXX/DVD
+              subCategories: []
+            - id: 6020
+              name: XXX/WMV
+              subCategories: []
+            - id: 6030
+              name: XXX/XviD
+              subCategories: []
+            - id: 6040
+              name: XXX/x264
+              subCategories: []
+            - id: 6050
+              name: XXX/Pack
+              subCategories: []
+            - id: 6060
+              name: XXX/ImageSet
+              subCategories: []
+            - id: 6070
+              name: XXX/Other
+              subCategories: []
+            - id: 106010
+              name: XXX/DVD
+              subCategories: []
+            - id: 106020
+              name: XXX/WMV
+              subCategories: []
+            - id: 106030
+              name: XXX/XviD
+              subCategories: []
+            - id: 106040
+              name: XXX/x264
+              subCategories: []
+            - id: 106050
+              name: XXX/Pack
+              subCategories: []
+            - id: 106060
+              name: XXX/ImgSet
+              subCategories: []
+            - id: 106070
+              name: XXX/Other
+              subCategories: []
+            - id: 106000
+              name: XXX
+              subCategories: []
+            - id: 7000
+              name: Books
+              subCategories: []
+            - id: 7010
+              name: Books/Mags
+              subCategories: []
+            - id: 7020
+              name: Books/EBook
+              subCategories: []
+            - id: 7030
+              name: Books/Comics
+              subCategories: []
+            - id: 107010
+              name: Books/Mags
+              subCategories: []
+            - id: 107020
+              name: Books/Ebook
+              subCategories: []
+            - id: 107030
+              name: Books/Comics
+              subCategories: []
+            - id: 107000
+              name: Books
+              subCategories: []
+            - id: 8000
+              name: Other
+              subCategories: []
+            - id: 8010
+              name: Other/Misc
+              subCategories: []
+            - id: 108010
+              name: Other/Misc
+              subCategories: []
+            - id: 0
+              name: Other
+              subCategories: []
+            - id: 108000
+              name: Other
+              subCategories: []
 
 jellyfin:
   enabled: true
