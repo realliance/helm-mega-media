@@ -85,6 +85,17 @@ spec:
           volumeMounts:
             - mountPath: /config
               name: config
+        - name: init-media-subpath
+          image: docker.io/busybox:1
+          command: 
+            - 'sh'
+            - '-c'
+            - |
+              mkdir -p /media/{{ .selected.mediaDir }}
+              chown 1000:1000 /media/{{ .selected.mediaDir }}
+          volumeMounts:
+            - mountPath: /media
+              name: media
       containers:
         - name: {{ .selected.name }}
           image: "{{ .selected.image }}:{{ .selected.tag }}"

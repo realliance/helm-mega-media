@@ -49,6 +49,39 @@
         secretKeyRef:
           name: {{ include "mega-media.name" (merge (dict "name" $tableSelect.name) $) }}-api-key
           key: key
+{{ if ne . "Readarr" }}
+- name: insert-{{ kebabcase $tableSelect.name }}-root-folder
+  image: docker.io/bitnami/postgresql:17
+  command:
+  - 'sh'
+  - '-e'
+  - '-c'
+  - |
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc 'TRUNCATE TABLE "RootFolders";'
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc "INSERT INTO \"RootFolders\" (\"Path\") VALUES ('/media/{{ $tableSelect.mediaDir }}');"
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ $db_config.secret_name }}
+          key: {{ $db_config.secret_key }}
+{{ else }}
+- name: insert-{{ kebabcase $tableSelect.name }}-root-folder
+  image: docker.io/bitnami/postgresql:17
+  command:
+  - 'sh'
+  - '-e'
+  - '-c'
+  - |
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc 'TRUNCATE TABLE "RootFolders";'
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc "INSERT INTO \"RootFolders\" (\"Path\", \"IsCalibreLibrary\") VALUES ('/media/{{ $tableSelect.mediaDir }}', false);"
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ $db_config.secret_name }}
+          key: {{ $db_config.secret_key }}
+{{ end }}
 {{ end }}
 - name: sabnzbd-for-{{ kebabcase $tableSelect.name }}
   image: docker.io/bitnami/postgresql:17

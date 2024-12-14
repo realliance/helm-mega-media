@@ -33,6 +33,7 @@ arrs:
   sonarr:
     enabled: true
     name: sonarr
+    mediaDir: tvshows
     image: ghcr.io/hotio/sonarr
     tag: v4
     pullPolicy: IfNotPresent
@@ -60,6 +61,7 @@ arrs:
   radarr:
     enabled: true
     name: radarr
+    mediaDir: movies
     image: ghcr.io/hotio/radarr
     tag: release
     pullPolicy: IfNotPresent
@@ -77,6 +79,7 @@ arrs:
   lidarr:
     enabled: true
     name: lidarr
+    mediaDir: music
     image: ghcr.io/hotio/lidarr
     tag: testing
     pullPolicy: IfNotPresent
@@ -94,6 +97,7 @@ arrs:
   readarr:
     enabled: true
     name: readarr
+    mediaDir: books
     image: ghcr.io/hotio/readarr
     tag: testing
     pullPolicy: IfNotPresent
@@ -657,8 +661,8 @@ sabnzbd:
     unwanted_extensions_mode = 0
     new_nzb_on_failure = 0
     history_retention = ""
-    history_retention_option = all
-    history_retention_number = 1
+    history_retention_option = days-delete
+    history_retention_number = 14
     quota_size = ""
     quota_day = ""
     quota_resume = 0
