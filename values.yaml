@@ -531,6 +531,40 @@ jellyfin:
     storageClassName: standard
     size: 1Gi
 
+plex:
+  enabled: true
+  mountMedia: true
+  name: plex
+  image: ghcr.io/hotio/plex
+  tag: release
+  pullPolicy: IfNotPresent
+  port: 32400
+  claimTokenFromSecretKeyRef:
+    name: plex-claim-token
+    key: token
+  livenessProbe:
+    httpGet:
+      path: /identity
+      port: http
+  readinessProbe:
+    httpGet:
+      path: /identity
+      port: http
+  resources:
+    requests:
+      memory: 4Gi
+      cpu: 1
+    limits:
+      memory: 4Gi
+  config:
+    path: /config
+    storageClassName: standard
+    size: 1Gi
+  transcode:
+    path: /transcode
+    storageClassName: standard
+    size: 1Gi
+
 sabnzbd:
   enabled: true
   mountMedia: true
