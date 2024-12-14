@@ -1,5 +1,5 @@
 {{- define "mega-media.insert.apps" -}}
-- name: drop-{{ kebabcase .database }}-applications
+- name: drop-{{ kebabcase .database }}-tables
   image: docker.io/bitnami/postgresql:17
   command:
   - 'sh'
@@ -8,6 +8,7 @@
   - |
       PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -d {{ .database }} -tc 'TRUNCATE TABLE "Applications";'
       PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -d {{ .database }} -tc 'TRUNCATE TABLE "Indexers";'
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ .db_config.user }} -h {{ .db_config.host }} -p {{ .db_config.port }} -d {{ .database }} -tc 'TRUNCATE TABLE "DownloadClients";'
   env:
     - name: DB_PASSWORD
       valueFrom:
@@ -17,13 +18,16 @@
 {{- $database := .database -}}
 {{- $db_config := .db_config -}}
 {{- $apiKey := .apiKey -}}
+{{- $sab_url := print (include "mega-media.name" (merge (dict "name" "sabnzbd") $)) "." $.Release.Namespace ".svc.cluster.local"  -}}
 {{- $prowlarrUrl := print "http://" (include "mega-media.name" (dict "name" "prowlarr" | merge .)) "." .Release.Namespace ".svc.cluster.local:" .port  -}}
-{{- range tuple "Sonarr" "Radarr" "Lidarr" "Readarr" }}
+{{- range tuple "Sonarr" "Radarr" "Lidarr" "Readarr" "Prowlarr" }}
 {{- $tableSelect := get $.Values.arrs (lower .) -}}
+{{- $arr_database := print $tableSelect.name "_main" -}}
 {{- $name := include "mega-media.name" (merge (dict "name" $tableSelect.name) $) -}}
 {{- $url := print "http://" $name "." $.Release.Namespace ".svc.cluster.local:" $tableSelect.port  -}}
-{{- $settings := dict "prowlarrUrl" $prowlarrUrl "baseUrl" $url "apiKey" "$API_KEY" | merge $tableSelect.search | mustToJson | quote -}}
 {{- $configContract := print . "Settings" }}
+{{ if ne . "Prowlarr" }}
+{{- $settings := dict "prowlarrUrl" $prowlarrUrl "baseUrl" $url "apiKey" "$API_KEY" | merge $tableSelect.search | mustToJson | quote -}}
 - name: insert-{{ kebabcase $tableSelect.name }}-app-sync
   image: docker.io/bitnami/postgresql:17
   command:
@@ -44,6 +48,29 @@
       valueFrom:
         secretKeyRef:
           name: {{ include "mega-media.name" (merge (dict "name" $tableSelect.name) $) }}-api-key
+          key: key
+{{ end }}
+- name: sabnzbd-for-{{ kebabcase $tableSelect.name }}
+  image: docker.io/bitnami/postgresql:17
+  command:
+  - 'sh'
+  - '-e'
+  - '-c'
+  - |
+      export CONFIG=$(echo "{\"host\": \"{{ $sab_url }}\", \"port\": {{ $.Values.sabnzbd.port }}, \"useSsl\": false, \"apiKey\": \"$API_KEY\", \"category\": \"prowlarr\", \"priority\": -100 }")
+      echo $CONFIG
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc 'TRUNCATE TABLE "DownloadClients";'
+      PGPASSWORD="$(DB_PASSWORD)" psql -U {{ $db_config.user }} -h {{ $db_config.host }} -p {{ $db_config.port }} -d {{ $arr_database }} -tc "INSERT INTO \"DownloadClients\" (\"Enable\", \"Name\", \"Implementation\", \"Settings\", \"ConfigContract\", \"Priority\") VALUES (true, 'SABnzbd', 'Sabnzbd', '$CONFIG', 'SabnzbdSettings', 1);"
+  env:
+    - name: DB_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ $db_config.secret_name }}
+          key: {{ $db_config.secret_key }}
+    - name: API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "mega-media.name" (merge (dict "name" "sabnzbd") $) }}-api-key
           key: key
 {{- end }}
 {{- range $.Values.arrs.prowlarr.indexers }}

@@ -1,9 +1,6 @@
-
-{{- with .Values.sabnzbd -}}
+{{- with .Values.jellyfin -}}
 {{- if .enabled -}}
-{{- $contextWithName := merge (dict "name" "sabnzbd") $ -}}
-{{- $apiKey := lower (randAlphaNum 64) -}}
-
+{{- $contextWithName := merge (dict "name" "jellyfin") $ -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -36,45 +33,8 @@ spec:
         {{- toYaml $.Values.podSecurityContext | nindent 8 }}
       affinity:
         {{- include "mega-media.sameNodePodAffinity" $contextWithName | nindent 10 }}
-      initContainers:
-        {{- range .servers -}}
-          {{- include "mega-media.sabnzbd.server" . | nindent 8 }}
-        {{- end }}
-        - name: init-ini
-          image: docker.io/busybox:1
-          command: 
-            - 'sh'
-            - '-c'
-            - |
-              if [ ! -f /config/sabnzbd.ini ]
-              then       
-              echo '
-              __version__ = 19
-              __encoding__ = utf-8
-              [misc]
-              api_key = {{ $apiKey | quote }}
-              nzb_key = {{ $apiKey | quote }}
-              ' > /config/sabnzbd.ini && chmod 666 /config/sabnzbd.ini
-
-              echo '
-              {{ .ini | indent 14 }}
-              ' >> /config/sabnzbd.ini
-
-              echo "
-              [servers]
-              $(cat /config-stubs/stub-*)
-              " >> /config/sabnzbd.ini
-
-              cp /config/sabnzbd.ini /config/sabnzbd.ini.clone
-              fi
-              cat /config/sabnzbd.ini
-          volumeMounts:
-            - mountPath: /config-stubs
-              name: config-file
-            - mountPath: /config
-              name: config
       containers:
-        - name: sabnzbd
+        - name: jellyfin
           image: "{{ .image }}:{{ .tag }}"
           imagePullPolicy: {{ .pullPolicy }}
           ports:
@@ -96,21 +56,15 @@ spec:
           - configMapRef:
               name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
       volumes:
-      - name: config-file
-        emptyDir:
-          medium: Memory
-      - name: media
-        persistentVolumeClaim:
-          claimName: {{ include "mega-media.name" (merge (dict "name" "media") $) }}
       - name: config
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" $contextWithName }}-config
-
+      - name: media
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" (merge (dict "name" "media") $) }}
 {{ with .config -}}
 {{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size ) $contextWithName) }}
 {{- end }}
-
 {{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
-{{ template "mega-media.api-key-secret" (merge (dict "apiKey" $apiKey) $contextWithName) }}
 {{- end }}
 {{- end }}
