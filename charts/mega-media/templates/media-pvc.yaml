@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mega-media.name" (merge (dict "name" "media") .) }}
+  labels:
+    {{- include "mega-media.labels" (merge (dict "name" "media") .) | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.media.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.media.size }}
