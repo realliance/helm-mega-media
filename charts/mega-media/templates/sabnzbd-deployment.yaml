@@ -50,8 +50,8 @@ spec:
               __version__ = 19
               __encoding__ = utf-8
               [misc]
-              api_key = {{ $apiKey | quote }}
-              nzb_key = {{ $apiKey | quote }}
+              api_key = "$API_KEY"
+              nzb_key = "$API_KEY"
               " > /config/sabnzbd.ini && chmod 666 /config/sabnzbd.ini
 
               echo '
@@ -69,6 +69,12 @@ spec:
               name: config-file
             - mountPath: /config
               name: config
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mega-media.name" $contextWithName }}-api-key
+                  key: key
       containers:
         - name: sabnzbd
           image: "{{ .image }}:{{ .tag }}"

@@ -3,7 +3,7 @@
 {{- $apiKey := lower (randAlphaNum 32) -}}
 
 {{ if eq $tableSelect.enabled true  }}
-{{ template "mega-media.arr.deployment" (merge (dict "selected" $tableSelect "apiKey" $apiKey) $) }}
+{{ template "mega-media.arr.deployment" (merge (dict "selected" $tableSelect) $) }}
 {{ template "mega-media.api-key-secret" (merge (dict "name" $tableSelect.name "apiKey" $apiKey) $) }}
 {{ template "mega-media.service" (merge (dict "name" $tableSelect.name "port" $tableSelect.port "targetPort" "http") $) }}
 {{- end }}

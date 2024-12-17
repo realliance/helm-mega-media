@@ -65,7 +65,7 @@ spec:
                 <Branch>develop</Branch>
                 <LogLevel>debug</LogLevel>
                 <UrlBase></UrlBase>
-                <ApiKey>{{ .apiKey }}</ApiKey>
+                <ApiKey>$(API_KEY)</ApiKey>
                 <AuthenticationMethod>External</AuthenticationMethod>
                 <InstanceName>{{ .Release.Name }}</InstanceName>
                 <PostgresUser>{{ $db_user }}</PostgresUser>
@@ -82,6 +82,11 @@ spec:
                 secretKeyRef:
                   name: {{ $db_secret_name }}
                   key: {{ $db_secret_key }}
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "mega-media.name" $nameInTable }}-api-key
+                  key: key
           volumeMounts:
             - mountPath: /config
               name: config
