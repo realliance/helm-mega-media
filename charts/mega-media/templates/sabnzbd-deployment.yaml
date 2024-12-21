@@ -4,6 +4,8 @@
 {{- $contextWithName := merge (dict "name" "sabnzbd") $ -}}
 {{- $apiKey := lower (randAlphaNum 64) -}}
 
+{{- $api_key_secret_name := hasKey . "apiKey" | ternary (get (.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" $contextWithName)) -}}
+{{- $api_key_secret_key := hasKey . "apiKey" | ternary (get (.apiKey) "key") "key" -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -73,8 +75,8 @@ spec:
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mega-media.name" $contextWithName }}-api-key
-                  key: key
+                  name: {{ $api_key_secret_name }}
+                  key: {{ $api_key_secret_key }}
       containers:
         - name: sabnzbd
           image: "{{ .image }}:{{ .tag }}"
@@ -113,6 +115,8 @@ spec:
 {{- end }}
 
 {{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
+{{ if hasKey . "apiKey" | not }}
 {{ template "mega-media.api-key-secret" (merge (dict "apiKey" $apiKey) $contextWithName) }}
+{{- end }}
 {{- end }}
 {{- end }}

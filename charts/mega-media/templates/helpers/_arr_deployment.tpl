@@ -8,6 +8,8 @@
 {{- $db_secret_key := .Values.postgresql.enabled | ternary "postgres-password" .Values.externalPostgres.passwordFromSecretKeyRef.key -}}
 {{- $db_dict := dict "host" $db_host "port" $db_port "user" $db_user "secret_name" $db_secret_name "secret_key" $db_secret_key -}}
 
+{{- $api_key_secret_name := hasKey .selected "apiKey" | ternary (get (.selected.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" $nameInTable)) -}}
+{{- $api_key_secret_key := hasKey .selected "apiKey" | ternary (get (.selected.apiKey) "key") "key" -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -85,8 +87,8 @@ spec:
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mega-media.name" $nameInTable }}-api-key
-                  key: key
+                  name: {{ $api_key_secret_name }}
+                  key: {{ $api_key_secret_key }}
           volumeMounts:
             - mountPath: /config
               name: config

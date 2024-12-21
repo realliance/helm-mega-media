@@ -17,9 +17,13 @@
           key: {{ .db_config.secret_key }}
 {{- $database := .database -}}
 {{- $db_config := .db_config -}}
-{{- $apiKey := .apiKey -}}
+
+{{- $api_key_secret_name := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" (merge (dict "name" "sabnzbd") $))) -}}
+{{- $api_key_secret_key := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "key") "key" -}}
+
 {{- $sab_url := print (include "mega-media.name" (merge (dict "name" "sabnzbd") $)) "." $.Release.Namespace ".svc.cluster.local"  -}}
 {{- $prowlarrUrl := print "http://" (include "mega-media.name" (dict "name" "prowlarr" | merge .)) "." .Release.Namespace ".svc.cluster.local:" .port  -}}
+
 {{- range tuple "Sonarr" "Radarr" "Lidarr" "Readarr" "Prowlarr" }}
 {{- $tableSelect := get $.Values.arrs (lower .) -}}
 {{- $arr_database := print $tableSelect.name "_main" -}}
@@ -103,8 +107,8 @@
     - name: API_KEY
       valueFrom:
         secretKeyRef:
-          name: {{ include "mega-media.name" (merge (dict "name" "sabnzbd") $) }}-api-key
-          key: key
+          name: {{ $api_key_secret_name }}
+          key: {{ $api_key_secret_key }}
 {{- end }}
 {{- range $.Values.arrs.prowlarr.indexers }}
 {{- $configContract := print .type "Settings" }}
