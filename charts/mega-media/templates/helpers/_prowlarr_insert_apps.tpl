@@ -18,16 +18,21 @@
 {{- $database := .database -}}
 {{- $db_config := .db_config -}}
 
-{{- $api_key_secret_name := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" (merge (dict "name" "sabnzbd") $))) -}}
-{{- $api_key_secret_key := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "key") "key" -}}
+{{- $sab_api_key_secret_name := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" (merge (dict "name" "sabnzbd") $))) -}}
+{{- $sab_api_key_secret_key := hasKey .Values.sabnzbd "apiKey" | ternary (get (.Values.sabnzbd.apiKey) "key") "key" -}}
 
 {{- $sab_url := print (include "mega-media.name" (merge (dict "name" "sabnzbd") $)) "." $.Release.Namespace ".svc.cluster.local"  -}}
 {{- $prowlarrUrl := print "http://" (include "mega-media.name" (dict "name" "prowlarr" | merge .)) "." .Release.Namespace ".svc.cluster.local:" .port  -}}
 
 {{- range tuple "Sonarr" "Radarr" "Lidarr" "Readarr" "Prowlarr" }}
 {{- $tableSelect := get $.Values.arrs (lower .) -}}
+
 {{- $arr_database := print $tableSelect.name "_main" -}}
 {{- $name := include "mega-media.name" (merge (dict "name" $tableSelect.name) $) -}}
+
+{{- $api_key_secret_name := hasKey $tableSelect "apiKey" | ternary (get ($tableSelect.apiKey) "name") (printf "%s-api-key" $name) -}}
+{{- $api_key_secret_key := hasKey $tableSelect "apiKey" | ternary (get ($tableSelect.apiKey) "key") "key" -}}
+
 {{- $url := print "http://" $name "." $.Release.Namespace ".svc.cluster.local:" $tableSelect.port  -}}
 {{- $configContract := print . "Settings" }}
 {{ if ne . "Prowlarr" }}
@@ -51,8 +56,8 @@
     - name: API_KEY
       valueFrom:
         secretKeyRef:
-          name: {{ include "mega-media.name" (merge (dict "name" $tableSelect.name) $) }}-api-key
-          key: key
+          name: {{ $api_key_secret_name }}
+          key: {{ $api_key_secret_key }}
 {{ if ne . "Readarr" }}
 - name: insert-{{ kebabcase $tableSelect.name }}-root-folder
   image: docker.io/bitnami/postgresql:17
@@ -107,8 +112,8 @@
     - name: API_KEY
       valueFrom:
         secretKeyRef:
-          name: {{ $api_key_secret_name }}
-          key: {{ $api_key_secret_key }}
+          name: {{ $sab_api_key_secret_name }}
+          key: {{ $sab_api_key_secret_key }}
 {{- end }}
 {{- range $.Values.arrs.prowlarr.indexers }}
 {{- $configContract := print .type "Settings" }}
