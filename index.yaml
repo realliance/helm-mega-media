@@ -3,6 +3,21 @@ entries:
   mega-media:
   - apiVersion: v2
     appVersion: 1.16.0
+    created: "2025-05-10T02:02:09.54695103Z"
+    dependencies:
+    - condition: postgresql.enabled
+      name: postgresql
+      repository: oci://registry-1.docker.io/bitnamicharts
+      version: 16.0.4
+    description: A Helm chart for Kubernetes
+    digest: 0ed1a904a7ffed90bea347f7453191d2c155c77451b9e84886d16de1df553e7f
+    name: mega-media
+    type: application
+    urls:
+    - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.4.0/mega-media-0.4.0.tgz
+    version: 0.4.0
+  - apiVersion: v2
+    appVersion: 1.16.0
     created: "2024-12-21T05:25:58.389979062Z"
     dependencies:
     - condition: postgresql.enabled
@@ -76,4 +91,4 @@ entries:
     urls:
     - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.1.0/mega-media-0.1.0.tgz
     version: 0.1.0
-generated: "2024-12-21T05:25:58.390028765Z"
+generated: "2025-05-10T02:02:09.546984432Z"
