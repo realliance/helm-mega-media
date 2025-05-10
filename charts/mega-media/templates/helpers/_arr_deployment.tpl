@@ -18,6 +18,8 @@ metadata:
   labels:
     {{- include "mega-media.labels" $nameInTable | nindent 4 }}
 spec:
+  strategy:
+    type: Recreate
   replicas: 1
   selector:
     matchLabels:
