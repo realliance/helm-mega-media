@@ -131,6 +131,8 @@ spec:
           - mountPath: /config/config.xml
             name: config
             subPath: config.xml
+          - mountPath: /config/MediaCover/
+            name: media-covers
       volumes:
       - name: config
         emptyDir:
@@ -138,4 +140,7 @@ spec:
       - name: media
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" (merge (dict "name" "media") .) }}
+      - name: media-covers
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" (merge (dict "name" .selected.name) .) }}-media-covers
 {{- end }}

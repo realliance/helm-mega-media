@@ -67,6 +67,10 @@ arrs:
         - 5070
       syncAnimeStandardFormatSearch: true
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
+    mediaCovers:
+      enabled: true
+      storageClassName: standard
+      size: 1Gi
   radarr:
     enabled: true
     name: radarr
@@ -88,6 +92,10 @@ arrs:
       syncCategories:
         - 2000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
+    mediaCovers:
+      enabled: true
+      storageClassName: standard
+      size: 1Gi
   lidarr:
     enabled: true
     name: lidarr
@@ -109,6 +117,10 @@ arrs:
       syncCategories:
         - 3000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
+    mediaCovers:
+      enabled: true
+      storageClassName: standard
+      size: 1Gi
   readarr:
     enabled: true
     name: readarr
@@ -130,6 +142,10 @@ arrs:
       syncCategories:
         - 7000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
+    mediaCovers:
+      enabled: true
+      storageClassName: standard
+      size: 5Gi
   prowlarr:
     enabled: true
     name: prowlarr
@@ -1000,6 +1016,12 @@ sabnzbd:
 media:
   storageClassName: standard
   size: 10Gi
+
+# Global mediaCovers definition (can be overridden by each app if needed)
+mediaCovers:
+  enabled: true
+  storageClassName: standard
+  size: 1Gi
 
 podLabels: []
 podAnnotations: {}
