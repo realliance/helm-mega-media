@@ -2,6 +2,12 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
+# Optional: The node to schedule the pods on.
+# Will roughly override the pod affinity by forcing a given node,
+# but is handy for scenarios where you are limited in your
+# gpu resource options and need to force it.
+nodeName: ""
+
 postgresql:
   enabled: true
   primary:
