@@ -406,3 +406,16 @@ def test_wait_for_ready_returns_only_reachable_services(monkeypatch):
 
     ready = r.wait_for_ready([reachable, broken], timeout=1)
     assert [s.name for s in ready] == ["sonarr"]
+
+
+def test_upsert_raises_on_4xx(monkeypatch):
+    """upsert() itself stays strict — it's the caller's job to decide
+    whether one bad row should abort. main() wraps it in try/except."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "GET":
+            return httpx.Response(200, json=[])
+        # POST is rejected (e.g. *arr API schema mismatch)
+        return httpx.Response(400, json={"error": "BaseUrl invalid"})
+
+    with mock_client(handler) as c, pytest.raises(httpx.HTTPStatusError):
+        r.upsert(c, "applications", {"name": "Readarr"})

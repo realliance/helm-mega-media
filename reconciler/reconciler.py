@@ -275,19 +275,37 @@ def main() -> int:
             sab_api_key=env(sab["apiKeyEnv"]),
         )
 
+    # Wrap individual upserts so one bad row (e.g. Prowlarr rejecting an
+    # Application because the target *arr's API schema is incompatible)
+    # doesn't abort the whole reconcile. Counts failures so the run still
+    # exits non-zero — the CronJob and bootstrap hook then surface a real
+    # error in their status without losing the progress made.
+    failures: list[str] = []
+
+    def try_upsert(client: httpx.Client, resource: str, desired: dict[str, Any],
+                   key: str = "name", context: str = "") -> None:
+        identity = desired.get(key, "?")
+        try:
+            upsert(client, resource, desired, key=key)
+        except (httpx.HTTPError, RuntimeError) as e:
+            label = f"{context}:{resource}/{identity}" if context else f"{resource}/{identity}"
+            log.warning("%s skipped: %s", label, e)
+            failures.append(label)
+
     if prowlarr_ready:
         with arr_client(prowlarr) as c:
             for arr in arrs:
-                upsert(c, "applications", prowlarr_application_for_arr(arr, prowlarr.url))
+                try_upsert(c, "applications", prowlarr_application_for_arr(arr, prowlarr.url),
+                           context="prowlarr")
             for indexer in config.get("indexers", []):
-                upsert(c, "indexer", prowlarr_indexer(indexer))
+                try_upsert(c, "indexer", prowlarr_indexer(indexer), context="prowlarr")
             if sab_dc:
-                upsert(c, "downloadclient", sab_dc)
+                try_upsert(c, "downloadclient", sab_dc, context="prowlarr")
 
     for arr in arrs:
         with arr_client(arr) as c:
             if sab_dc:
-                upsert(c, "downloadclient", sab_dc)
+                try_upsert(c, "downloadclient", sab_dc, context=arr.name)
             # Root folders depend on profile ids the *arr seeds during its
             # first migration. On a brand-new install the GET /qualityprofile
             # call has occasionally returned empty even after /ping succeeded;
@@ -297,7 +315,12 @@ def main() -> int:
                 upsert(c, "rootfolder", root_folder_for_arr(arr, c), key="path")
             except (httpx.HTTPError, RuntimeError) as e:
                 log.warning("%s: root folder skipped: %s", arr.name, e)
+                failures.append(f"{arr.name}:rootfolder")
 
+    if failures:
+        log.error("reconciliation completed with %d failure(s): %s",
+                  len(failures), ", ".join(failures))
+        return 1
     log.info("reconciliation complete")
     return 0
 
