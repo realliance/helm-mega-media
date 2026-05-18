@@ -33,7 +33,7 @@ class ArrService:
     url: str                                  # http://mega-sonarr.media.svc.cluster.local:8989
     api_key: str
     api_version: str                          # "v3" for sonarr/radarr, "v1" for lidarr/readarr/prowlarr
-    media_dir: str | None = None              # subdir under /media. None for prowlarr.
+    root_folder_path: str | None = None       # resolved by helm: defaults to /media/<mediaDir>, overridable via arrs.<svc>.rootFolderPath
     search: dict[str, Any] = field(default_factory=dict)  # syncCategories etc., merged into Prowlarr Application fields
 
 
@@ -171,14 +171,18 @@ def root_folder_for_arr(svc: ArrService, client: httpx.Client) -> dict[str, Any]
     """Desired RootFolder spec. Sonarr/Radarr accept {path} alone; Lidarr/Readarr
     require defaultQualityProfileId + defaultMetadataProfileId which can only be
     learned at runtime from the live *arr (their ids depend on what migrations
-    seeded). Readarr additionally needs isCalibreLibrary."""
-    if not svc.media_dir:
-        raise RuntimeError(f"{svc.name}: mediaDir not configured")
-    path = f"/media/{svc.media_dir}"
+    seeded). Readarr additionally needs isCalibreLibrary.
+
+    `path` is resolved by helm into `arrs.<svc>.rootFolderPath` (which defaults
+    to `/media/<mediaDir>` but is overridable). For Lidarr/Readarr the `name`
+    field is required and shown in the UI; derive it from the path basename."""
+    if not svc.root_folder_path:
+        raise RuntimeError(f"{svc.name}: rootFolderPath not configured")
+    path = svc.root_folder_path
     if svc.name in ("sonarr", "radarr"):
         return {"path": path}
     common = {
-        "name": svc.media_dir,
+        "name": path.rstrip("/").rsplit("/", 1)[-1] or path,
         "path": path,
         "defaultQualityProfileId": first_profile_id(client, "qualityprofile"),
         "defaultMetadataProfileId": first_profile_id(client, "metadataprofile"),
@@ -227,7 +231,7 @@ def build_services(config: dict[str, Any]) -> tuple[list[ArrService], ArrService
             url=raw["url"],
             api_key=env(raw["apiKeyEnv"]),
             api_version=ARR_API_VERSIONS.get(raw["name"], "v1"),
-            media_dir=raw.get("mediaDir"),
+            root_folder_path=raw.get("rootFolderPath"),
             search=raw.get("search") or {},
         )
         if raw["name"] == "prowlarr":

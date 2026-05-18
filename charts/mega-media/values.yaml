@@ -58,6 +58,10 @@ arrs:
     enabled: true
     name: sonarr
     mediaDir: tvshows
+    # Override the root folder the reconciler registers with this *arr.
+    # Defaults to /media/<mediaDir>; set this if you mount media elsewhere
+    # or want a sub-path (e.g. /media/tvshows/anime).
+    # rootFolderPath: /media/tvshows
     image: ghcr.io/hotio/sonarr
     tag: v4
     pullPolicy: IfNotPresent

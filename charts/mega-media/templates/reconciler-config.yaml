@@ -20,7 +20,7 @@ data:
         url: http://{{ printf "%s-%s" $releaseName $svc.name }}.{{ $namespace }}.svc.cluster.local:{{ $svc.port }}
         apiKeyEnv: ARR_{{ upper $name }}_API_KEY
 {{- if $svc.mediaDir }}
-        mediaDir: {{ $svc.mediaDir | quote }}
+        rootFolderPath: {{ $svc.rootFolderPath | default (printf "/media/%s" $svc.mediaDir) | quote }}
 {{- end }}
 {{- if $svc.search }}
         search:

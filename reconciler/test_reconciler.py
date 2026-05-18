@@ -255,7 +255,7 @@ def _profile_handler(req: httpx.Request) -> httpx.Response:
 def test_root_folder_sonarr_is_path_only():
     svc = r.ArrService(
         name="sonarr", impl="Sonarr", url="http://s", api_key="k",
-        api_version="v3", media_dir="tvshows",
+        api_version="v3", root_folder_path="/media/tvshows",
     )
     # No client calls expected — pass a transport that fails loudly.
     client = httpx.Client(
@@ -267,10 +267,12 @@ def test_root_folder_sonarr_is_path_only():
     assert out == {"path": "/media/tvshows"}
 
 
-def test_root_folder_radarr_is_path_only():
+def test_root_folder_uses_value_as_given():
+    """When the operator overrides rootFolderPath in values.yaml the reconciler
+    passes it through verbatim — no /media/ prefix added, no normalization."""
     svc = r.ArrService(
         name="radarr", impl="Radarr", url="http://r", api_key="k",
-        api_version="v3", media_dir="movies",
+        api_version="v3", root_folder_path="/storage/movies/4k",
     )
     client = httpx.Client(
         transport=httpx.MockTransport(lambda req: pytest.fail(f"unexpected: {req.url}")),
@@ -278,28 +280,41 @@ def test_root_folder_radarr_is_path_only():
     )
     with client:
         out = r.root_folder_for_arr(svc, client)
-    assert out == {"path": "/media/movies"}
+    assert out == {"path": "/storage/movies/4k"}
 
 
 def test_root_folder_lidarr_resolves_profiles_from_live_arr():
     svc = r.ArrService(
         name="lidarr", impl="Lidarr", url="http://l", api_key="k",
-        api_version="v1", media_dir="music",
+        api_version="v1", root_folder_path="/media/music",
     )
     with httpx.Client(transport=httpx.MockTransport(_profile_handler),
                       base_url="http://l/api/v1") as client:
         out = r.root_folder_for_arr(svc, client)
     assert out["path"] == "/media/music"
-    assert out["name"] == "music"
+    assert out["name"] == "music"             # derived from path basename
     assert out["defaultQualityProfileId"] == 1
     assert out["defaultMetadataProfileId"] == 7
     assert "isCalibreLibrary" not in out
 
 
+def test_root_folder_lidarr_derives_name_from_overridden_path():
+    """When rootFolderPath is overridden to a deeper path the displayed name
+    follows the last segment — not the *arr type."""
+    svc = r.ArrService(
+        name="lidarr", impl="Lidarr", url="http://l", api_key="k",
+        api_version="v1", root_folder_path="/data/audio/lossless",
+    )
+    with httpx.Client(transport=httpx.MockTransport(_profile_handler),
+                      base_url="http://l/api/v1") as client:
+        out = r.root_folder_for_arr(svc, client)
+    assert out["name"] == "lossless"
+
+
 def test_root_folder_readarr_includes_isCalibreLibrary():
     svc = r.ArrService(
         name="readarr", impl="Readarr", url="http://b", api_key="k",
-        api_version="v1", media_dir="books",
+        api_version="v1", root_folder_path="/media/books",
     )
     with httpx.Client(transport=httpx.MockTransport(_profile_handler),
                       base_url="http://b/api/v1") as client:
@@ -308,14 +323,14 @@ def test_root_folder_readarr_includes_isCalibreLibrary():
     assert out["defaultQualityProfileId"] == 1
 
 
-def test_root_folder_raises_when_media_dir_missing():
+def test_root_folder_raises_when_path_missing():
     svc = r.ArrService(
         name="sonarr", impl="Sonarr", url="http://s", api_key="k",
-        api_version="v3", media_dir=None,
+        api_version="v3", root_folder_path=None,
     )
     client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(500)),
                           base_url="http://s/api/v3")
-    with client, pytest.raises(RuntimeError, match="mediaDir"):
+    with client, pytest.raises(RuntimeError, match="rootFolderPath"):
         r.root_folder_for_arr(svc, client)
 
 
