@@ -327,10 +327,16 @@ def main() -> int:
                 failures.append(f"{arr.name}:rootfolder")
 
     if failures:
+        # Surface per-resource failures via logs (and the failures count
+        # in summary) but exit 0 — the CronJob retries every tick, and
+        # exit 1 here wedges Argo's post-install/post-upgrade hook into a
+        # perpetual retry loop for failures that the next reconcile would
+        # almost certainly hit the same way. Operators can wire alerts to
+        # the "reconciliation completed with N failure(s)" log line.
         log.error("reconciliation completed with %d failure(s): %s",
                   len(failures), ", ".join(failures))
-        return 1
-    log.info("reconciliation complete")
+    else:
+        log.info("reconciliation complete")
     return 0
 
 
