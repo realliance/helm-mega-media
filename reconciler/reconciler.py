@@ -96,14 +96,22 @@ def arr_client(svc: ArrService) -> httpx.Client:
     )
 
 
-def upsert(client: httpx.Client, resource: str, desired: dict[str, Any], key: str = "name") -> None:
+def upsert(client: httpx.Client, resource: str, desired: dict[str, Any],
+           key: str = "name", skip_if_exists: bool = False) -> None:
     """GET /api/<ver>/<resource>, find by `key` (default "name"), PUT if present,
     POST if not. Use key="path" for RootFolders, whose natural identity is the
-    filesystem path rather than a display name."""
+    filesystem path rather than a display name.
+
+    Set skip_if_exists=True for resources the *arr API treats as immutable
+    (e.g. Radarr's RootFolders only accept POST/DELETE — PUT returns 405).
+    A path that already exists is already correct; nothing to update."""
     identity = desired.get(key)
     existing = client.get(f"/{resource}").raise_for_status().json()
     match = next((r for r in existing if r.get(key) == identity), None)
     if match:
+        if skip_if_exists:
+            log.info("exists %s: %s (skip)", resource, identity)
+            return
         merged = {**match, **desired, "id": match["id"]}
         r = client.put(f"/{resource}/{match['id']}", json=merged)
         if r.status_code >= 400:
@@ -312,7 +320,8 @@ def main() -> int:
             # log and continue so one slow *arr doesn't block reconciling the
             # others. CronJob will retry on the next tick.
             try:
-                upsert(c, "rootfolder", root_folder_for_arr(arr, c), key="path")
+                upsert(c, "rootfolder", root_folder_for_arr(arr, c),
+                       key="path", skip_if_exists=True)
             except (httpx.HTTPError, RuntimeError) as e:
                 log.warning("%s: root folder skipped: %s", arr.name, e)
                 failures.append(f"{arr.name}:rootfolder")

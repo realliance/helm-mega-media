@@ -31,7 +31,10 @@ data:
 {{- if .Values.sabnzbd.enabled }}
     sabnzbd:
       enabled: true
-      host: http://{{ printf "%s-%s" $releaseName .Values.sabnzbd.name }}.{{ $namespace }}.svc.cluster.local
+      # *arr download-client APIs reject scheme prefixes here — value
+      # must be a bare hostname. (Scheme + port get combined in the *arr
+      # itself based on `useSsl`.)
+      host: {{ printf "%s-%s" $releaseName .Values.sabnzbd.name }}.{{ $namespace }}.svc.cluster.local
       port: {{ .Values.sabnzbd.port }}
       apiKeyEnv: SAB_API_KEY
 {{- end }}

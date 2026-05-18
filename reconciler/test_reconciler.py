@@ -408,6 +408,46 @@ def test_wait_for_ready_returns_only_reachable_services(monkeypatch):
     assert [s.name for s in ready] == ["sonarr"]
 
 
+def test_upsert_skip_if_exists_skips_put_when_matched():
+    """For resources whose API rejects PUT (Radarr RootFolders return 405),
+    skip_if_exists=True does GET-only and returns without writing."""
+    calls: list[tuple[str, str]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        if req.method == "GET":
+            return httpx.Response(200, json=[
+                {"id": 3, "path": "/media/movies"},
+            ])
+        return httpx.Response(405, text="Method Not Allowed")
+
+    with mock_client(handler) as c:
+        r.upsert(c, "rootfolder", {"path": "/media/movies"},
+                 key="path", skip_if_exists=True)
+
+    assert [m for m, _ in calls] == ["GET"]
+
+
+def test_upsert_skip_if_exists_still_posts_when_missing():
+    """skip_if_exists only suppresses the PUT branch — POST still fires for
+    a row that doesn't exist yet."""
+    calls: list[tuple[str, str]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        if req.method == "GET":
+            return httpx.Response(200, json=[])
+        if req.method == "POST":
+            return httpx.Response(201, json=json.loads(req.content))
+        return httpx.Response(500)
+
+    with mock_client(handler) as c:
+        r.upsert(c, "rootfolder", {"path": "/media/movies"},
+                 key="path", skip_if_exists=True)
+
+    assert [m for m, _ in calls] == ["GET", "POST"]
+
+
 def test_upsert_raises_on_4xx(monkeypatch):
     """upsert() itself stays strict — it's the caller's job to decide
     whether one bad row should abort. main() wraps it in try/except."""
