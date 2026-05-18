@@ -58,12 +58,15 @@ def env(name: str) -> str:
     return val
 
 
-def wait_for_ready(services: list[ArrService], timeout: int = 300) -> None:
-    """Poll each /ping until all return 200 or timeout. *arr instances refuse
-    POSTs while their DB migrations are still running, so this avoids racing
-    a fresh install."""
+def wait_for_ready(services: list[ArrService], timeout: int = 300) -> list[ArrService]:
+    """Poll each /ping until 200 or timeout, returning the services that became
+    ready. *arr instances refuse POSTs while their DB migrations are still
+    running, so this avoids racing a fresh install. Unreachable services are
+    skipped with a warning rather than aborting the reconcile — one bad *arr
+    (broken image, crash loop) shouldn't starve the others."""
     deadline = time.time() + timeout
     pending = list(services)
+    ready: list[ArrService] = []
     while pending and time.time() < deadline:
         still_pending: list[ArrService] = []
         for svc in pending:
@@ -71,6 +74,7 @@ def wait_for_ready(services: list[ArrService], timeout: int = 300) -> None:
                 r = httpx.get(f"{svc.url}/ping", timeout=5)
                 if r.status_code == 200:
                     log.info("ready: %s", svc.name)
+                    ready.append(svc)
                     continue
             except httpx.RequestError as e:
                 log.debug("not ready %s: %s", svc.name, e)
@@ -80,7 +84,8 @@ def wait_for_ready(services: list[ArrService], timeout: int = 300) -> None:
         pending = still_pending
     if pending:
         names = ", ".join(s.name for s in pending)
-        raise RuntimeError(f"services did not become ready: {names}")
+        log.warning("services did not become ready (skipping): %s", names)
+    return ready
 
 
 def arr_client(svc: ArrService) -> httpx.Client:
@@ -251,7 +256,15 @@ def main() -> int:
     config = load_config()
     arrs, prowlarr = build_services(config)
 
-    wait_for_ready([*arrs, prowlarr])
+    ready = wait_for_ready([*arrs, prowlarr])
+    ready_names = {s.name for s in ready}
+    prowlarr_ready = prowlarr.name in ready_names
+    arrs = [a for a in arrs if a.name in ready_names]
+    if not prowlarr_ready:
+        log.warning(
+            "prowlarr not ready; skipping prowlarr-side reconcile "
+            "(applications, indexers, download client)"
+        )
 
     sab = config.get("sabnzbd")
     sab_dc: dict[str, Any] | None = None
@@ -262,13 +275,14 @@ def main() -> int:
             sab_api_key=env(sab["apiKeyEnv"]),
         )
 
-    with arr_client(prowlarr) as c:
-        for arr in arrs:
-            upsert(c, "applications", prowlarr_application_for_arr(arr, prowlarr.url))
-        for indexer in config.get("indexers", []):
-            upsert(c, "indexer", prowlarr_indexer(indexer))
-        if sab_dc:
-            upsert(c, "downloadclient", sab_dc)
+    if prowlarr_ready:
+        with arr_client(prowlarr) as c:
+            for arr in arrs:
+                upsert(c, "applications", prowlarr_application_for_arr(arr, prowlarr.url))
+            for indexer in config.get("indexers", []):
+                upsert(c, "indexer", prowlarr_indexer(indexer))
+            if sab_dc:
+                upsert(c, "downloadclient", sab_dc)
 
     for arr in arrs:
         with arr_client(arr) as c:

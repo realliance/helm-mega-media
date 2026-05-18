@@ -135,8 +135,14 @@ arrs:
     enabled: true
     name: readarr
     mediaDir: books
-    image: ghcr.io/hotio/readarr
-    tag: release
+    # hotio doesn't publish a readarr container (their readarr repo was
+    # yanked from ghcr.io — token endpoint returns 403 DENIED for every
+    # tag). linuxserver's floating tags (develop, nightly) currently
+    # ship empty manifest lists, so we pin a known-working versioned
+    # tag. Bump via Renovate or by inspecting
+    #   ghcr.io/v2/linuxserver/readarr/tags/list?n=200
+    image: ghcr.io/linuxserver/readarr
+    tag: nightly-0.1.0.1082-ls47
     pullPolicy: IfNotPresent
     port: 8787
     # apiKey:

@@ -9,5 +9,6 @@ pkgs.mkShell {
     kubernetes-helm
     kind
     jq
+    (python3.withPackages (p: with p; [ httpx pyyaml pytest ]))
   ];
 }

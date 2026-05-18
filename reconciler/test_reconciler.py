@@ -367,3 +367,42 @@ def test_upsert_can_match_by_path_for_rootfolders():
 
     assert [m for m, _ in calls] == ["GET", "PUT"]
     assert calls[-1][1] == "/api/v3/rootfolder/3"
+
+
+# ---------------------------------------------------------------------------
+# wait_for_ready(): unreachable services should be skipped, not abort the run.
+# ---------------------------------------------------------------------------
+
+def _svc(name: str, url: str) -> r.ArrService:
+    return r.ArrService(
+        name=name, impl=name.capitalize(), url=url,
+        api_key="k", api_version="v3",
+    )
+
+
+def test_wait_for_ready_returns_only_reachable_services(monkeypatch):
+    """One *arr unreachable shouldn't starve the others. wait_for_ready
+    returns the subset that became ready; caller filters."""
+    reachable = _svc("sonarr", "http://sonarr.test")
+    broken = _svc("readarr", "http://readarr.test")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.host == "sonarr.test":
+            return httpx.Response(200, text="pong")
+        # readarr never comes up
+        raise httpx.ConnectError("connection refused", request=req)
+
+    # Patch httpx.get to route through a MockTransport-backed client so we
+    # exercise the real retry loop without hitting the network.
+    transport = httpx.MockTransport(handler)
+    real_get = httpx.get
+
+    def fake_get(url, **kwargs):
+        with httpx.Client(transport=transport) as c:
+            return c.get(url, **kwargs)
+
+    monkeypatch.setattr(r.httpx, "get", fake_get)
+    monkeypatch.setattr(r.time, "sleep", lambda _s: None)
+
+    ready = r.wait_for_ready([reachable, broken], timeout=1)
+    assert [s.name for s in ready] == ["sonarr"]
