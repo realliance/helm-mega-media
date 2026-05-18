@@ -3,6 +3,16 @@ entries:
   mega-media:
   - apiVersion: v2
     appVersion: 1.16.0
+    created: "2026-05-18T04:29:07.229445747Z"
+    description: A Helm chart for Kubernetes
+    digest: 601a696fa498c045e47d1fe04ee9d8f8dcb5ab5d89f431dd45fc872315d7e034
+    name: mega-media
+    type: application
+    urls:
+    - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.8.5/mega-media-0.8.5.tgz
+    version: 0.8.5
+  - apiVersion: v2
+    appVersion: 1.16.0
     created: "2026-05-18T04:16:09.751831659Z"
     description: A Helm chart for Kubernetes
     digest: ec8708379d0dc1eb89249f82fd058fa449efdb9384fd31a1d3d4fd98c263a6bf
@@ -161,4 +171,4 @@ entries:
     urls:
     - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.1.0/mega-media-0.1.0.tgz
     version: 0.1.0
-generated: "2026-05-18T04:16:09.751868353Z"
+generated: "2026-05-18T04:29:07.229542002Z"
