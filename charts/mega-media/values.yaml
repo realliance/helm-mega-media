@@ -1021,7 +1021,7 @@ media:
 
 reconciler:
   enabled: true
-  image: ghcr.io/christopherjmiller/helm-mega-media/reconciler
+  image: ghcr.io/realliance/helm-mega-media/reconciler
   tag: latest
   pullPolicy: IfNotPresent
   # Every 10 minutes. Also runs once on each helm install/upgrade via a
