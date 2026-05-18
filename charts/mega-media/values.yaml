@@ -111,7 +111,7 @@ arrs:
     name: lidarr
     mediaDir: music
     image: ghcr.io/hotio/lidarr
-    tag: testing
+    tag: release
     pullPolicy: IfNotPresent
     port: 8686
     # apiKey:
@@ -132,7 +132,7 @@ arrs:
     name: readarr
     mediaDir: books
     image: ghcr.io/hotio/readarr
-    tag: testing
+    tag: release
     pullPolicy: IfNotPresent
     port: 8787
     # apiKey:
