@@ -73,7 +73,7 @@ spec:
                 <LogLevel>debug</LogLevel>
                 <UrlBase></UrlBase>
                 <ApiKey>$(API_KEY)</ApiKey>
-                <AuthenticationMethod>External</AuthenticationMethod>
+                <AuthenticationMethod>{{ .selected.authenticationMethod | default "External" }}</AuthenticationMethod>
                 <InstanceName>{{ .Release.Name }}</InstanceName>
                 <PostgresUser>{{ $db_user }}</PostgresUser>
                 <PostgresPassword>$(DB_PASSWORD)</PostgresPassword>

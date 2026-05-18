@@ -143,6 +143,10 @@ arrs:
     #   ghcr.io/v2/linuxserver/readarr/tags/list?n=200
     image: ghcr.io/linuxserver/readarr
     tag: nightly-0.1.0.1082-ls47
+    # LSIO's Readarr v0.1.0.1082 rejects AuthenticationMethod=External
+    # (added in newer Servarr versions). Use None — UI is gated by
+    # ingress auth anyway.
+    authenticationMethod: None
     pullPolicy: IfNotPresent
     port: 8787
     # apiKey:
