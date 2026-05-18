@@ -1,0 +1,48 @@
+name: Build reconciler image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "reconciler/**"
+      - ".github/workflows/reconciler-image.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag (defaults to short SHA)"
+        required: false
+
+jobs:
+  build:
+    permissions:
+      contents: read
+      packages: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute tags
+        id: tags
+        run: |
+          sha=$(git rev-parse --short HEAD)
+          custom="${{ github.event.inputs.tag }}"
+          if [ -n "$custom" ]; then
+            echo "tags=ghcr.io/${{ github.repository }}/reconciler:$custom,ghcr.io/${{ github.repository }}/reconciler:latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=ghcr.io/${{ github.repository }}/reconciler:$sha,ghcr.io/${{ github.repository }}/reconciler:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v5
+        with:
+          context: reconciler
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

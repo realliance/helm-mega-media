@@ -1,0 +1,41 @@
+{{- if .Values.reconciler.enabled -}}
+{{- $nameInTable := merge (dict "name" "reconciler") . -}}
+{{- $configMapName := include "mega-media.name" $nameInTable -}}
+{{- $namespace := .Release.Namespace -}}
+{{- $releaseName := .Release.Name -}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $configMapName }}
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+data:
+  config.yaml: |
+    arrs:
+{{- range $name := tuple "sonarr" "radarr" "lidarr" "readarr" "prowlarr" }}
+{{- $svc := get $.Values.arrs $name -}}
+{{- if $svc.enabled }}
+      - name: {{ $name }}
+        url: http://{{ printf "%s-%s" $releaseName $svc.name }}.{{ $namespace }}.svc.cluster.local:{{ $svc.port }}
+        apiKeyEnv: ARR_{{ upper $name }}_API_KEY
+{{- end }}
+{{- end }}
+{{- if .Values.sabnzbd.enabled }}
+    sabnzbd:
+      enabled: true
+      host: http://{{ printf "%s-%s" $releaseName .Values.sabnzbd.name }}.{{ $namespace }}.svc.cluster.local
+      port: {{ .Values.sabnzbd.port }}
+      apiKeyEnv: SAB_API_KEY
+{{- end }}
+    indexers:
+{{- range $i, $indexer := .Values.arrs.prowlarr.indexers }}
+      - name: {{ $indexer.name | quote }}
+        type: {{ $indexer.type | quote }}
+        enabled: {{ $indexer.enabled }}
+        priority: {{ $indexer.priority }}
+        apiKeyEnv: INDEXER_{{ $i }}_API_KEY
+        settings:
+{{ toYaml $indexer.settings | indent 10 }}
+{{- end }}
+{{- end -}}

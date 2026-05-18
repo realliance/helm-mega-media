@@ -1019,6 +1019,22 @@ media:
   storageClassName: standard
   size: 10Gi
 
+reconciler:
+  enabled: true
+  image: ghcr.io/christopherjmiller/helm-mega-media/reconciler
+  tag: latest
+  pullPolicy: IfNotPresent
+  # Every 10 minutes. Also runs once on each helm install/upgrade via a
+  # post-install/post-upgrade hook Job, so first-deploy doesn't have to
+  # wait for the next tick.
+  schedule: "*/10 * * * *"
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+
 podLabels: []
 podAnnotations: {}
 
