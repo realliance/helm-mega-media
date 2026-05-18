@@ -53,7 +53,7 @@ Postgres Init Db
 */}}
 {{- define "mega-media.initDb" -}}
 - name: create-{{ kebabcase .database }}-if-missing
-  image: docker.io/bitnami/postgresql:17
+  image: "{{ .Values.psqlClient.image }}:{{ .Values.psqlClient.tag }}"
   command:
   - 'sh'
   - '-e'

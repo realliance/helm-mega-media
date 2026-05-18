@@ -50,7 +50,7 @@ spec:
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
         - name: wait-for-db
-          image: docker.io/bitnami/postgresql:17
+          image: "{{ .Values.psqlClient.image }}:{{ .Values.psqlClient.tag }}"
           command:
             - 'sh'
             - '-e'
@@ -131,16 +131,11 @@ spec:
           - mountPath: /config/config.xml
             name: config
             subPath: config.xml
-          - mountPath: /config/MediaCover/
-            name: media-covers
       volumes:
       - name: config
-        emptyDir:
-          medium: Memory
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" $nameInTable }}-config
       - name: media
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" (merge (dict "name" "media") .) }}
-      - name: media-covers
-        persistentVolumeClaim:
-          claimName: {{ include "mega-media.name" (merge (dict "name" .selected.name) .) }}-media-covers
 {{- end }}

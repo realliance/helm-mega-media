@@ -1,6 +1,7 @@
 {{- define "mega-media.insert.apps" -}}
+{{- $psql_image := printf "%s:%s" .Values.psqlClient.image .Values.psqlClient.tag -}}
 - name: drop-{{ kebabcase .database }}-tables
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'
@@ -38,7 +39,7 @@
 {{ if ne . "Prowlarr" }}
 {{- $settings := dict "prowlarrUrl" $prowlarrUrl "baseUrl" $url "apiKey" "$API_KEY" | merge $tableSelect.search | mustToJson | quote -}}
 - name: insert-{{ kebabcase $tableSelect.name }}-app-sync
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'
@@ -60,7 +61,7 @@
           key: {{ $api_key_secret_key }}
 {{ if ne . "Readarr" }}
 - name: insert-{{ kebabcase $tableSelect.name }}-root-folder
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'
@@ -76,7 +77,7 @@
           key: {{ $db_config.secret_key }}
 {{ else }}
 - name: insert-{{ kebabcase $tableSelect.name }}-root-folder
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'
@@ -93,7 +94,7 @@
 {{ end }}
 {{ end }}
 - name: sabnzbd-for-{{ kebabcase $tableSelect.name }}
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'
@@ -118,7 +119,7 @@
 {{- range $.Values.arrs.prowlarr.indexers }}
 {{- $configContract := print .type "Settings" }}
 - name: insert-{{ kebabcase .name }}-indexer
-  image: docker.io/bitnami/postgresql:17
+  image: {{ $psql_image | quote }}
   command:
   - 'sh'
   - '-e'

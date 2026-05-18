@@ -1,14 +1,12 @@
 {{- range tuple "sonarr" "radarr" "lidarr" "readarr" "prowlarr" }}
 {{- $tableSelect := get $.Values.arrs . -}}
 {{- $apiKey := lower (randAlphaNum 32) -}}
+{{- $config := $tableSelect.config | default $.Values.arrs.config -}}
 
 {{ if eq $tableSelect.enabled true  }}
 {{ template "mega-media.arr.deployment" (merge (dict "selected" $tableSelect) $) }}
-{{- $mediaCoversConfig := get $tableSelect "mediaCovers" | default $.Values.mediaCovers -}}
-{{- if $mediaCoversConfig.enabled -}}
-{{ template "mega-media.media-covers.pvc" (merge (dict "name" $tableSelect.name "storageClassName" $mediaCoversConfig.storageClassName "size" $mediaCoversConfig.size) $) }}
-{{- end }}
 {{ template "mega-media.service" (merge (dict "name" $tableSelect.name "port" $tableSelect.port "targetPort" "http") $) }}
+{{ template "mega-media.config.pvc" (merge (dict "name" $tableSelect.name "storageClassName" $config.storageClassName "size" $config.size) $) }}
 {{ if hasKey $tableSelect "apiKey" | not }}
 {{ template "mega-media.api-key-secret" (merge (dict "name" $tableSelect.name "apiKey" $apiKey) $) }}
 {{- end }}

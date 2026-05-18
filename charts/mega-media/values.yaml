@@ -14,6 +14,14 @@ postgresql:
     persistence:
       size: 20Gi
 
+# Image used by chart-internal init containers that need psql / pg_isready
+# (database bootstrap, prowlarr sync hook, wait-for-db). Override with a
+# mirror like public.ecr.aws/docker/library/postgres if Docker Hub rate
+# limits you.
+psqlClient:
+  image: docker.io/postgres
+  tag: 17-alpine
+
 # Only used if postgresql.enabled == false
 externalPostgres:
   host: "psql-host"
@@ -24,6 +32,9 @@ externalPostgres:
     key: "psql-key"
 
 arrs:
+  config:
+    storageClassName: standard
+    size: 1Gi
   probes:
     livenessProbe:
       # 30 Seconds for migration time
@@ -67,10 +78,6 @@ arrs:
         - 5070
       syncAnimeStandardFormatSearch: true
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
-    mediaCovers:
-      enabled: true
-      storageClassName: standard
-      size: 1Gi
   radarr:
     enabled: true
     name: radarr
@@ -92,10 +99,6 @@ arrs:
       syncCategories:
         - 2000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
-    mediaCovers:
-      enabled: true
-      storageClassName: standard
-      size: 1Gi
   lidarr:
     enabled: true
     name: lidarr
@@ -117,10 +120,6 @@ arrs:
       syncCategories:
         - 3000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
-    mediaCovers:
-      enabled: true
-      storageClassName: standard
-      size: 1Gi
   readarr:
     enabled: true
     name: readarr
@@ -142,10 +141,6 @@ arrs:
       syncCategories:
         - 7000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
-    mediaCovers:
-      enabled: true
-      storageClassName: standard
-      size: 5Gi
   prowlarr:
     enabled: true
     name: prowlarr
@@ -1016,12 +1011,6 @@ sabnzbd:
 media:
   storageClassName: standard
   size: 10Gi
-
-# Global mediaCovers definition (can be overridden by each app if needed)
-mediaCovers:
-  enabled: true
-  storageClassName: standard
-  size: 1Gi
 
 podLabels: []
 podAnnotations: {}
