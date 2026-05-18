@@ -204,3 +204,151 @@ def test_prowlarr_application_for_arr_shape():
     assert fields["baseUrl"] == "http://sonarr.svc:8989"
     assert fields["prowlarrUrl"] == "http://prowlarr:9696"
     assert fields["apiKey"] == "abc"
+
+
+def test_prowlarr_application_merges_search_settings():
+    """v1 hardcoded syncCategories=[], which meant Prowlarr never pushed any
+    category to the *arr and searches never reached the indexer. v2 merges
+    the whole arrs.<svc>.search block — that's the regression guard."""
+    svc = r.ArrService(
+        name="sonarr", impl="Sonarr",
+        url="http://s", api_key="k", api_version="v3",
+        search={
+            "syncCategories": [5000, 5040, 5070],
+            "animeSyncCategories": [5070],
+            "syncAnimeStandardFormatSearch": True,
+            "syncRejectBlocklistedTorrentHashesWhileGrabbing": True,
+        },
+    )
+    out = r.prowlarr_application_for_arr(svc, "http://p")
+    fields = {f["name"]: f["value"] for f in out["fields"]}
+    assert fields["syncCategories"] == [5000, 5040, 5070]
+    assert fields["animeSyncCategories"] == [5070]
+    assert fields["syncAnimeStandardFormatSearch"] is True
+    assert fields["syncRejectBlocklistedTorrentHashesWhileGrabbing"] is True
+
+
+def test_prowlarr_application_with_empty_search_omits_extra_fields():
+    svc = r.ArrService(
+        name="prowlarr", impl="Prowlarr",
+        url="http://p", api_key="k", api_version="v1",
+    )
+    out = r.prowlarr_application_for_arr(svc, "http://p")
+    names = [f["name"] for f in out["fields"]]
+    assert names == ["prowlarrUrl", "baseUrl", "apiKey"]
+
+
+# ---------------------------------------------------------------------------
+# Root folders: Sonarr/Radarr take just {path}; Lidarr/Readarr need profile
+# ids resolved from the live *arr; Readarr additionally needs isCalibreLibrary.
+# ---------------------------------------------------------------------------
+
+def _profile_handler(req: httpx.Request) -> httpx.Response:
+    """Mock GET handler that returns one quality + one metadata profile."""
+    if req.url.path.endswith("/qualityprofile"):
+        return httpx.Response(200, json=[{"id": 1, "name": "Standard"}])
+    if req.url.path.endswith("/metadataprofile"):
+        return httpx.Response(200, json=[{"id": 7, "name": "Default"}])
+    return httpx.Response(404)
+
+
+def test_root_folder_sonarr_is_path_only():
+    svc = r.ArrService(
+        name="sonarr", impl="Sonarr", url="http://s", api_key="k",
+        api_version="v3", media_dir="tvshows",
+    )
+    # No client calls expected — pass a transport that fails loudly.
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda req: pytest.fail(f"unexpected: {req.url}")),
+        base_url="http://s/api/v3",
+    )
+    with client:
+        out = r.root_folder_for_arr(svc, client)
+    assert out == {"path": "/media/tvshows"}
+
+
+def test_root_folder_radarr_is_path_only():
+    svc = r.ArrService(
+        name="radarr", impl="Radarr", url="http://r", api_key="k",
+        api_version="v3", media_dir="movies",
+    )
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda req: pytest.fail(f"unexpected: {req.url}")),
+        base_url="http://r/api/v3",
+    )
+    with client:
+        out = r.root_folder_for_arr(svc, client)
+    assert out == {"path": "/media/movies"}
+
+
+def test_root_folder_lidarr_resolves_profiles_from_live_arr():
+    svc = r.ArrService(
+        name="lidarr", impl="Lidarr", url="http://l", api_key="k",
+        api_version="v1", media_dir="music",
+    )
+    with httpx.Client(transport=httpx.MockTransport(_profile_handler),
+                      base_url="http://l/api/v1") as client:
+        out = r.root_folder_for_arr(svc, client)
+    assert out["path"] == "/media/music"
+    assert out["name"] == "music"
+    assert out["defaultQualityProfileId"] == 1
+    assert out["defaultMetadataProfileId"] == 7
+    assert "isCalibreLibrary" not in out
+
+
+def test_root_folder_readarr_includes_isCalibreLibrary():
+    svc = r.ArrService(
+        name="readarr", impl="Readarr", url="http://b", api_key="k",
+        api_version="v1", media_dir="books",
+    )
+    with httpx.Client(transport=httpx.MockTransport(_profile_handler),
+                      base_url="http://b/api/v1") as client:
+        out = r.root_folder_for_arr(svc, client)
+    assert out["isCalibreLibrary"] is False
+    assert out["defaultQualityProfileId"] == 1
+
+
+def test_root_folder_raises_when_media_dir_missing():
+    svc = r.ArrService(
+        name="sonarr", impl="Sonarr", url="http://s", api_key="k",
+        api_version="v3", media_dir=None,
+    )
+    client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(500)),
+                          base_url="http://s/api/v3")
+    with client, pytest.raises(RuntimeError, match="mediaDir"):
+        r.root_folder_for_arr(svc, client)
+
+
+def test_first_profile_id_raises_clearly_on_empty():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])
+    with httpx.Client(transport=httpx.MockTransport(handler),
+                      base_url="http://x/api/v1") as client:
+        with pytest.raises(RuntimeError, match="qualityprofile"):
+            r.first_profile_id(client, "qualityprofile")
+
+
+# ---------------------------------------------------------------------------
+# upsert(): the `key` parameter lets RootFolders be matched by path.
+# ---------------------------------------------------------------------------
+
+def test_upsert_can_match_by_path_for_rootfolders():
+    """Sonarr's RootFolder collection has no `name` field — entries are
+    identified by their `path`. The key= parameter exists so this works."""
+    calls: list[tuple[str, str]] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((req.method, req.url.path))
+        if req.method == "GET":
+            return httpx.Response(200, json=[
+                {"id": 3, "path": "/media/tvshows", "accessible": True},
+            ])
+        if req.method == "PUT":
+            return httpx.Response(200, json=json.loads(req.content))
+        return httpx.Response(500)
+
+    with mock_client(handler) as c:
+        r.upsert(c, "rootfolder", {"path": "/media/tvshows"}, key="path")
+
+    assert [m for m, _ in calls] == ["GET", "PUT"]
+    assert calls[-1][1] == "/api/v3/rootfolder/3"

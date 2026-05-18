@@ -19,6 +19,13 @@ data:
       - name: {{ $name }}
         url: http://{{ printf "%s-%s" $releaseName $svc.name }}.{{ $namespace }}.svc.cluster.local:{{ $svc.port }}
         apiKeyEnv: ARR_{{ upper $name }}_API_KEY
+{{- if $svc.mediaDir }}
+        mediaDir: {{ $svc.mediaDir | quote }}
+{{- end }}
+{{- if $svc.search }}
+        search:
+{{ toYaml $svc.search | indent 10 }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if .Values.sabnzbd.enabled }}
