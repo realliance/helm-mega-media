@@ -10,9 +10,16 @@ nodeName: ""
 
 postgresql:
   enabled: true
-  primary:
-    persistence:
-      size: 20Gi
+  image: docker.io/postgres
+  tag: 17-alpine
+  storageClassName: standard
+  size: 20Gi
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 512Mi
 
 # Image used by chart-internal init containers that need psql / pg_isready
 # (database bootstrap, prowlarr sync hook, wait-for-db). Override with a
