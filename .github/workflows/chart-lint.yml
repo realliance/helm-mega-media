@@ -1,0 +1,42 @@
+name: Chart Lint
+
+# Renders and schema-validates the chart on every PR that touches it, across the
+# value permutations that changed shape (reconciler deployment vs cronjob mode,
+# metrics on/off). Catches template breakage and invalid manifests before the
+# release pipeline — which uses skip_existing and would otherwise no-op silently.
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - ".github/workflows/chart-lint.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "charts/**"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint charts/mega-media
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Render + validate — deployment mode, metrics on
+        run: |
+          helm template t charts/mega-media --set metrics.enabled=true \
+            | kubeconform -strict -summary -ignore-missing-schemas
+
+      - name: Render + validate — cronjob mode
+        run: |
+          helm template t charts/mega-media --set reconciler.mode=cronjob \
+            | kubeconform -strict -summary -ignore-missing-schemas

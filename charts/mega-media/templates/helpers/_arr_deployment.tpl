@@ -26,10 +26,14 @@ spec:
       {{- include "mega-media.selectorLabels" $nameInTable | nindent 6 }}
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
       annotations:
+        # Roll the pod when arr-config changes: the *arr reads it via envFrom,
+        # which never live-updates, so without this a ConfigMap edit silently
+        # goes stale until an unrelated restart.
+        checksum/config: {{ include (print .Template.BasePath "/arr-config.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
+        {{- end }}
       labels:
         {{- include "mega-media.labels" $nameInTable | nindent 8 }}
         {{- with .Values.podLabels }}
@@ -131,6 +135,33 @@ spec:
           - mountPath: /config/config.xml
             name: config
             subPath: config.xml
+        {{- if .Values.metrics.enabled }}
+        # exportarr: scrapes this *arr over localhost with the same API key the
+        # app uses ($api_key_secret_* resolved above — external + generated both
+        # work). ENABLE_ADDITIONAL_METRICS adds queue/history depth.
+        - name: exportarr
+          image: "{{ .Values.metrics.image }}:{{ .Values.metrics.tag }}"
+          imagePullPolicy: {{ .Values.metrics.pullPolicy }}
+          args: ["{{ .selected.name }}"]
+          env:
+            - name: PORT
+              value: {{ .Values.metrics.port | quote }}
+            - name: URL
+              value: "http://localhost:{{ .selected.port }}"
+            - name: APIKEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $api_key_secret_name }}
+                  key: {{ $api_key_secret_key }}
+            - name: ENABLE_ADDITIONAL_METRICS
+              value: "true"
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          resources:
+            {{- toYaml .Values.metrics.resources | nindent 12 }}
+        {{- end }}
       volumes:
       - name: config
         persistentVolumeClaim:

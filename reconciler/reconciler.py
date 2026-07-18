@@ -15,13 +15,21 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import httpx
 import yaml
+
+try:  # optional: the process runs fine without it, metrics just go dark
+    import prometheus_client
+except ImportError:  # pragma: no cover - exercised only when the dep is absent
+    prometheus_client = None  # type: ignore[assignment]
 
 log = logging.getLogger("reconciler")
 
@@ -35,6 +43,7 @@ class ArrService:
     api_version: str                          # "v3" for sonarr/radarr, "v1" for lidarr/readarr/prowlarr
     root_folder_path: str | None = None       # resolved by helm: defaults to /media/<mediaDir>, overridable via arrs.<svc>.rootFolderPath
     search: dict[str, Any] = field(default_factory=dict)  # syncCategories etc., merged into Prowlarr Application fields
+    min_version: str | None = None             # optional known-good floor; below it we warn about possible schema/API drift
 
 
 # Lidarr and Readarr are still on v1; Sonarr and Radarr are on v3.
@@ -231,6 +240,46 @@ def prowlarr_indexer(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _version_tuple(version: str) -> tuple[int, ...]:
+    """Parse a dotted numeric version ("4.0.1.929") into a comparable tuple.
+    Non-numeric segments (e.g. a build hash) stop the parse — we only compare
+    the leading numeric prefix, which is enough for a known-good floor."""
+    parts: list[int] = []
+    for seg in version.split("."):
+        if seg.isdigit():
+            parts.append(int(seg))
+        else:
+            break
+    return tuple(parts)
+
+
+def check_version(client: httpx.Client, svc: ArrService) -> str | None:
+    """Advisory preflight: log the *arr's running version and warn if it's below
+    the configured known-good floor (svc.min_version). Never raises and never
+    blocks the reconcile — the reconciler relies on the REST *contract*, which is
+    stable across minor versions where the DB schema is not, so this is a
+    diagnostic signal for drift, not a gate. Returns the version string."""
+    try:
+        status = client.get("/system/status").raise_for_status().json()
+    except (httpx.HTTPError, RuntimeError, ValueError) as e:
+        log.warning("%s: could not read /system/status: %s", svc.name, e)
+        return None
+    if not isinstance(status, dict):
+        log.warning("%s: /system/status returned unexpected shape", svc.name)
+        return None
+    version = status.get("version")
+    log.info("%s version: %s", svc.name, version)
+    if svc.min_version and version and (
+        _version_tuple(version) < _version_tuple(svc.min_version)
+    ):
+        log.warning(
+            "%s version %s is below the known-good floor %s — reconcile may hit "
+            "schema/API drift; pin the image or raise the floor once verified",
+            svc.name, version, svc.min_version,
+        )
+    return version
+
+
 def build_services(config: dict[str, Any]) -> tuple[list[ArrService], ArrService]:
     """Returns (non-prowlarr arrs, prowlarr) — separated because Prowlarr's
     role in reconciliation is different from the others."""
@@ -246,6 +295,7 @@ def build_services(config: dict[str, Any]) -> tuple[list[ArrService], ArrService
             api_version=ARR_API_VERSIONS.get(raw["name"], "v1"),
             root_folder_path=raw.get("rootFolderPath"),
             search=raw.get("search") or {},
+            min_version=raw.get("minVersion"),
         )
         if raw["name"] == "prowlarr":
             prowlarr = svc
@@ -256,16 +306,110 @@ def build_services(config: dict[str, Any]) -> tuple[list[ArrService], ArrService
     return arrs, prowlarr
 
 
-def main() -> int:
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO"),
-        format="%(asctime)s %(levelname)s %(message)s",
-    )
-    config = load_config()
+class Telemetry:
+    """Prometheus surface for the reconcile loop. Degrades to no-ops when
+    prometheus_client isn't installed so the reconciler never hard-depends on
+    it (unit tests, minimal images). `ready` is flipped True by main() once the
+    loop is up and serving, backing /readyz (see main() for why not "first pass
+    completed")."""
+
+    def __init__(self) -> None:
+        self.ready = False
+        self._enabled = prometheus_client is not None
+        if not self._enabled:
+            return
+        # A dedicated registry (not the global default) so constructing more
+        # than one Telemetry — in tests, or a future refactor — never trips
+        # "Duplicated timeseries in CollectorRegistry".
+        self._registry = prometheus_client.CollectorRegistry()
+        G = prometheus_client.Gauge
+        reg = self._registry
+        self._runs = prometheus_client.Counter(
+            "megamedia_reconcile_runs_total", "Reconcile iterations attempted", registry=reg)
+        self._last_ts = G(
+            "megamedia_last_reconcile_timestamp_seconds",
+            "Unix time of the last completed reconcile", registry=reg)
+        self._duration = G(
+            "megamedia_reconcile_duration_seconds", "Duration of the last reconcile", registry=reg)
+        self._failures = G(
+            "megamedia_reconcile_failures", "Per-resource failures in the last reconcile",
+            registry=reg)
+        self._success = G(
+            "megamedia_reconcile_success",
+            "1 if the last reconcile had zero failures, else 0", registry=reg)
+        self._reachable = G(
+            "megamedia_service_reachable", "1 if the *arr answered /ping", ["service"],
+            registry=reg)
+
+    def record_run(self, duration: float, failures: int, now: float) -> None:
+        self.ready = True
+        if not self._enabled:
+            return
+        self._runs.inc()
+        self._last_ts.set(now)
+        self._duration.set(duration)
+        self._failures.set(failures)
+        self._success.set(0 if failures else 1)
+
+    def set_reachable(self, service: str, ok: bool) -> None:
+        if self._enabled:
+            self._reachable.labels(service=service).set(1 if ok else 0)
+
+    def render(self) -> tuple[bytes, str]:
+        if not self._enabled:
+            return b"# prometheus_client not installed\n", "text/plain"
+        return (prometheus_client.generate_latest(self._registry),
+                prometheus_client.CONTENT_TYPE_LATEST)
+
+
+def serve_health(telemetry: Telemetry, port: int) -> ThreadingHTTPServer:
+    """Tiny always-on HTTP surface: /healthz (liveness), /readyz (gated on the
+    first completed reconcile) and /metrics. Runs in a daemon thread so it never
+    blocks shutdown. Deliberately dependency-free — a stdlib handler, not a web
+    framework, which is where Python containers actually get heavy."""
+
+    class Handler(BaseHTTPRequestHandler):
+        def _reply(self, code: int, body: bytes, ctype: str = "text/plain") -> None:
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+            path = self.path.split("?", 1)[0]
+            if path == "/healthz":
+                self._reply(200, b"ok")
+            elif path == "/readyz":
+                self._reply(200, b"ready") if telemetry.ready else self._reply(503, b"not ready")
+            elif path == "/metrics":
+                body, ctype = telemetry.render()
+                self._reply(200, body, ctype)
+            else:
+                self._reply(404, b"not found")
+
+        def log_message(self, *_args: Any) -> None:  # silence per-request logging
+            pass
+
+    httpd = ThreadingHTTPServer(("", port), Handler)
+    threading.Thread(target=httpd.serve_forever, name="health", daemon=True).start()
+    log.info("health/metrics server listening on :%d (/healthz /readyz /metrics)", port)
+    return httpd
+
+
+def reconcile_once(config: dict[str, Any], telemetry: Telemetry | None = None) -> list[str]:
+    """Run a single convergence pass. Returns the list of per-resource failure
+    labels (empty on full success). Never raises for per-resource errors — each
+    upsert is wrapped so one bad row doesn't abort the rest. Safe to call
+    repeatedly from the loop; each call re-resolves ready services."""
     arrs, prowlarr = build_services(config)
 
-    ready = wait_for_ready([*arrs, prowlarr])
+    wait_timeout = int(os.environ.get("WAIT_TIMEOUT", "300"))
+    ready = wait_for_ready([*arrs, prowlarr], timeout=wait_timeout)
     ready_names = {s.name for s in ready}
+    if telemetry:
+        for svc in (*arrs, prowlarr):
+            telemetry.set_reachable(svc.name, svc.name in ready_names)
     prowlarr_ready = prowlarr.name in ready_names
     arrs = [a for a in arrs if a.name in ready_names]
     if not prowlarr_ready:
@@ -285,9 +429,8 @@ def main() -> int:
 
     # Wrap individual upserts so one bad row (e.g. Prowlarr rejecting an
     # Application because the target *arr's API schema is incompatible)
-    # doesn't abort the whole reconcile. Counts failures so the run still
-    # exits non-zero — the CronJob and bootstrap hook then surface a real
-    # error in their status without losing the progress made.
+    # doesn't abort the whole reconcile. Counts failures for the metrics /
+    # summary without losing the progress made.
     failures: list[str] = []
 
     def try_upsert(client: httpx.Client, resource: str, desired: dict[str, Any],
@@ -302,6 +445,7 @@ def main() -> int:
 
     if prowlarr_ready:
         with arr_client(prowlarr) as c:
+            check_version(c, prowlarr)
             for arr in arrs:
                 try_upsert(c, "applications", prowlarr_application_for_arr(arr, prowlarr.url),
                            context="prowlarr")
@@ -312,13 +456,14 @@ def main() -> int:
 
     for arr in arrs:
         with arr_client(arr) as c:
+            check_version(c, arr)
             if sab_dc:
                 try_upsert(c, "downloadclient", sab_dc, context=arr.name)
             # Root folders depend on profile ids the *arr seeds during its
             # first migration. On a brand-new install the GET /qualityprofile
             # call has occasionally returned empty even after /ping succeeded;
             # log and continue so one slow *arr doesn't block reconciling the
-            # others. CronJob will retry on the next tick.
+            # others. The next loop tick retries.
             try:
                 upsert(c, "rootfolder", root_folder_for_arr(arr, c),
                        key="path", skip_if_exists=True)
@@ -327,16 +472,60 @@ def main() -> int:
                 failures.append(f"{arr.name}:rootfolder")
 
     if failures:
-        # Surface per-resource failures via logs (and the failures count
-        # in summary) but exit 0 — the CronJob retries every tick, and
-        # exit 1 here wedges Argo's post-install/post-upgrade hook into a
-        # perpetual retry loop for failures that the next reconcile would
-        # almost certainly hit the same way. Operators can wire alerts to
-        # the "reconciliation completed with N failure(s)" log line.
         log.error("reconciliation completed with %d failure(s): %s",
                   len(failures), ", ".join(failures))
     else:
         log.info("reconciliation complete")
+    return failures
+
+
+def _truthy(name: str, default: bool = False) -> bool:
+    val = os.environ.get(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    oneshot = _truthy("RECONCILE_ONESHOT")
+    interval = int(os.environ.get("RECONCILE_INTERVAL", "300"))
+    metrics_port = int(os.environ.get("METRICS_PORT", "8000"))
+
+    # SIGTERM/SIGINT set the stop event; the loop wakes from its sleep and exits
+    # cleanly so Kubernetes rollouts don't wait out the termination grace period.
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_a: stop.set())
+
+    telemetry = Telemetry()
+    if not oneshot:
+        serve_health(telemetry, metrics_port)
+        # Readiness = "the loop is up and serving", not "a reconcile finished".
+        # The first pass can block in wait_for_ready polling *arrs that are still
+        # starting; gating readiness on that would wedge the pod un-ready (and
+        # its readiness probe failing) for minutes on a fresh install.
+        telemetry.ready = True
+
+    while not stop.is_set():
+        started = time.time()
+        # Reload config every iteration: the ConfigMap is a volume mount (not a
+        # subPath), so kubelet syncs edits in place and the loop picks them up
+        # with no pod restart.
+        try:
+            failures = reconcile_once(load_config(), telemetry)
+            telemetry.record_run(time.time() - started, len(failures), time.time())
+        except Exception:  # noqa: BLE001 - a loop must not die on a transient error
+            log.exception("reconcile iteration failed; retrying next tick")
+        if oneshot:
+            break
+        # Interruptible sleep: SIGTERM during the wait returns immediately.
+        stop.wait(interval)
+
+    log.info("reconciler exiting")
     return 0
 
 
