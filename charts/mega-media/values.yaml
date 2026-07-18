@@ -63,6 +63,11 @@ arrs:
     # or want a sub-path (e.g. /media/tvshows/anime).
     # rootFolderPath: /media/tvshows
     image: ghcr.io/hotio/sonarr
+    # Version hardening: `tag` floats on a major here (v4). For reproducibility
+    # pin a specific tag or @sha256 digest, and set `minVersion` to the
+    # known-good floor — the reconciler logs each *arr's running version on every
+    # pass and warns if it drops below this, surfacing a bad image bump early.
+    # minVersion: 4.0.0.0
     tag: v4
     pullPolicy: IfNotPresent
     port: 8989
@@ -132,7 +137,13 @@ arrs:
         - 3000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   readarr:
-    enabled: true
+    # NOTE: Readarr is EOL — Servarr archived development, so there are no new
+    # releases or security fixes and the upstream images have gone stale (see the
+    # pinning workaround below). Default-disabled for that reason; set
+    # `enabled: true` only if you still need it. Heads-up: on an existing release
+    # that had Readarr running, this default flips it off and the workload is
+    # removed on the next `helm upgrade` — pin `enabled: true` to keep it.
+    enabled: false
     name: readarr
     mediaDir: books
     # hotio doesn't publish a readarr container (their readarr repo was
@@ -1038,16 +1049,48 @@ reconciler:
   image: ghcr.io/realliance/helm-mega-media/reconciler
   tag: latest
   pullPolicy: IfNotPresent
-  # Every 10 minutes. Also runs once on each helm install/upgrade via a
-  # post-install/post-upgrade hook Job, so first-deploy doesn't have to
-  # wait for the next tick.
+  # How the ongoing reconcile runs:
+  #   deployment - a long-running loop (default). Reacts to drift within one
+  #                `interval`, picks up config-map edits with no restart, and
+  #                serves /healthz, /readyz and /metrics on `metricsPort`.
+  #   cronjob    - the legacy periodic Job (one pass per `schedule` tick, no
+  #                metrics endpoint). Kept for environments that prefer it.
+  # Both modes also run one pass immediately on each helm install/upgrade via a
+  # post-install/post-upgrade hook Job, so first-deploy doesn't wait.
+  mode: deployment
+  # deployment mode: seconds between reconcile passes.
+  interval: 300
+  # cronjob mode: schedule for the periodic Job.
   schedule: "*/10 * * * *"
+  # deployment mode: port for /healthz, /readyz and /metrics. Left off any
+  # Service on purpose — luma-homeops owns scraping (add a ServiceMonitor there).
+  metricsPort: 8000
   resources:
     requests:
       memory: 64Mi
       cpu: 50m
     limits:
       memory: 128Mi
+
+# Prometheus metrics via exportarr sidecars — one per enabled *arr and one for
+# SABnzbd. Default OFF. When enabled, each *arr/SAB pod gains an exportarr
+# container that scrapes the app over localhost using the same API key the app
+# uses, and each *arr/SAB Service gains a named `metrics` port. No ServiceMonitor
+# is rendered on purpose: luma-homeops owns monitors — point one at this port.
+metrics:
+  enabled: false
+  image: ghcr.io/onedr0p/exportarr
+  # Known-good pin. exportarr v2 covers sonarr/radarr/lidarr/readarr/prowlarr/sabnzbd.
+  tag: v2.2.0
+  pullPolicy: IfNotPresent
+  # Port exportarr listens on and the Service exposes as `metrics`.
+  port: 9707
+  resources:
+    requests:
+      memory: 32Mi
+      cpu: 10m
+    limits:
+      memory: 64Mi
 
 podLabels: []
 podAnnotations: {}

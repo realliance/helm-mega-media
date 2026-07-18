@@ -22,6 +22,9 @@ data:
 {{- if $svc.mediaDir }}
         rootFolderPath: {{ $svc.rootFolderPath | default (printf "/media/%s" $svc.mediaDir) | quote }}
 {{- end }}
+{{- if $svc.minVersion }}
+        minVersion: {{ $svc.minVersion | quote }}
+{{- end }}
 {{- if $svc.search }}
         search:
 {{ toYaml $svc.search | indent 10 }}

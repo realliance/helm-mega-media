@@ -1,0 +1,79 @@
+{{- if .Values.reconciler.enabled -}}
+{{- $nameInTable := merge (dict "name" "reconciler") . -}}
+{{- $mode := .Values.reconciler.mode | default "deployment" -}}
+{{- if eq $mode "deployment" }}
+{{/*
+Long-running reconcile loop. Re-reads the config ConfigMap each iteration
+(it's a volume mount, so kubelet syncs edits in place — no restart needed for
+config changes) and serves /healthz, /readyz and /metrics. Strategy Recreate so
+two loops never overlap across a rollout.
+*/}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mega-media.name" $nameInTable }}
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "mega-media.selectorLabels" $nameInTable | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mega-media.labels" $nameInTable | nindent 8 }}
+    spec:
+      {{- include "mega-media.reconciler.podspec" . | nindent 6 }}
+{{- else if eq $mode "cronjob" }}
+{{/* Legacy periodic Job: one oneshot pass per tick, no metrics endpoint. */}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mega-media.name" $nameInTable }}
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+spec:
+  schedule: {{ .Values.reconciler.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "mega-media.labels" $nameInTable | nindent 12 }}
+        spec:
+          {{- include "mega-media.reconciler.podspec" (merge (dict "oneshot" true) .) | nindent 10 }}
+{{- end }}
+{{/*
+Bootstrap Job (both modes): a post-install/post-upgrade hook that runs one
+oneshot pass immediately on deploy, so first-install convergence doesn't wait
+for the Deployment to schedule or the next CronJob tick.
+*/}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "mega-media.name" $nameInTable }}-bootstrap
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: 5
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "mega-media.labels" $nameInTable | nindent 8 }}
+    spec:
+      {{- include "mega-media.reconciler.podspec" (merge (dict "oneshot" true) .) | nindent 6 }}
+{{- end -}}

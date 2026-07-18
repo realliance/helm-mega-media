@@ -459,3 +459,132 @@ def test_upsert_raises_on_4xx(monkeypatch):
 
     with mock_client(handler) as c, pytest.raises(httpx.HTTPStatusError):
         r.upsert(c, "applications", {"name": "Readarr"})
+
+
+# ---------------------------------------------------------------------------
+# reconcile_once(): single-pass orchestration extracted from the loop. Reports
+# reachability, skips prowlarr-side work when prowlarr is down, and never
+# raises for per-resource failures.
+# ---------------------------------------------------------------------------
+
+def test_reconcile_once_reports_reachability_and_skips_when_nothing_ready(monkeypatch):
+    for name in ("SONARR", "PROWLARR"):
+        monkeypatch.setenv(f"ARR_{name}_API_KEY", "k")
+    config = {"arrs": [
+        {"name": "sonarr", "url": "http://s", "apiKeyEnv": "ARR_SONARR_API_KEY"},
+        {"name": "prowlarr", "url": "http://p", "apiKeyEnv": "ARR_PROWLARR_API_KEY"},
+    ]}
+    monkeypatch.setattr(r, "wait_for_ready", lambda services, **_k: [])
+    monkeypatch.setattr(r, "arr_client",
+                        lambda svc: pytest.fail("no client should be built when unready"))
+
+    seen: dict[str, bool] = {}
+
+    class FakeTelemetry:
+        ready = False
+
+        def set_reachable(self, service: str, ok: bool) -> None:
+            seen[service] = ok
+
+    failures = r.reconcile_once(config, FakeTelemetry())
+    assert failures == []
+    assert seen == {"sonarr": False, "prowlarr": False}
+
+
+def test_reconcile_once_upserts_each_edge_when_ready(monkeypatch):
+    for name in ("SONARR", "PROWLARR"):
+        monkeypatch.setenv(f"ARR_{name}_API_KEY", "k")
+    monkeypatch.setenv("SAB_API_KEY", "sabkey")
+    config = {
+        "arrs": [
+            {"name": "sonarr", "url": "http://s", "apiKeyEnv": "ARR_SONARR_API_KEY",
+             "rootFolderPath": "/media/tvshows"},
+            {"name": "prowlarr", "url": "http://p", "apiKeyEnv": "ARR_PROWLARR_API_KEY"},
+        ],
+        "sabnzbd": {"enabled": True, "host": "mega-sabnzbd", "port": 8080,
+                    "apiKeyEnv": "SAB_API_KEY"},
+    }
+    posted: list[str] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "GET":
+            if req.url.path.endswith("/system/status"):
+                return httpx.Response(200, json={"version": "4.0.1.929"})
+            return httpx.Response(200, json=[])
+        if req.method == "POST":
+            posted.append(req.url.path)
+            return httpx.Response(201, json={"id": 1, **json.loads(req.content)})
+        return httpx.Response(500)
+
+    def fake_client(svc: r.ArrService) -> httpx.Client:
+        return httpx.Client(
+            transport=httpx.MockTransport(handler),
+            base_url=f"{svc.url}/api/{svc.api_version}",
+            headers={"X-Api-Key": svc.api_key},
+        )
+
+    arrs, prowlarr = r.build_services(config)
+    monkeypatch.setattr(r, "wait_for_ready", lambda services, **_k: [*arrs, prowlarr])
+    monkeypatch.setattr(r, "arr_client", fake_client)
+
+    failures = r.reconcile_once(config, None)
+
+    assert failures == []
+    assert any(p.endswith("/applications") for p in posted)   # prowlarr <- sonarr
+    assert any(p.endswith("/downloadclient") for p in posted)  # sab wired in
+    assert any(p.endswith("/rootfolder") for p in posted)      # sonarr root folder
+
+
+# ---------------------------------------------------------------------------
+# Loop plumbing: env parsing + telemetry degrade-gracefully contract.
+# ---------------------------------------------------------------------------
+
+def test_truthy_parses_common_forms(monkeypatch):
+    monkeypatch.setenv("FLAG", "true")
+    assert r._truthy("FLAG") is True
+    monkeypatch.setenv("FLAG", "0")
+    assert r._truthy("FLAG") is False
+    monkeypatch.delenv("FLAG", raising=False)
+    assert r._truthy("FLAG", default=True) is True
+    assert r._truthy("FLAG") is False
+
+
+def test_version_tuple_parses_leading_numeric_prefix():
+    assert r._version_tuple("4.0.1.929") == (4, 0, 1, 929)
+    assert r._version_tuple("1.2.3-develop") == (1, 2)   # stops at non-numeric seg
+    assert r._version_tuple("") == ()
+
+
+def test_check_version_warns_below_floor_but_never_raises(caplog):
+    svc = r.ArrService(name="sonarr", impl="Sonarr", url="http://s", api_key="k",
+                       api_version="v3", min_version="4.0.0.0")
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"version": "3.0.10.1567"})  # below floor
+
+    with mock_client(handler) as c, caplog.at_level("WARNING"):
+        version = r.check_version(c, svc)
+    assert version == "3.0.10.1567"
+    assert any("below the known-good floor" in m for m in caplog.messages)
+
+
+def test_check_version_tolerates_bad_shape():
+    """A non-dict body (or a 500) must not raise out of the reconcile loop."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=[])   # unexpected: a list, not an object
+
+    with mock_client(handler) as c:
+        assert r.check_version(c, _svc("sonarr", "http://s")) is None
+
+
+def test_telemetry_marks_ready_and_renders_safely():
+    """record_run flips ready True (so /readyz gates on the first pass) and
+    render() returns bytes whether or not prometheus_client is installed."""
+    t = r.Telemetry()
+    assert t.ready is False
+    t.set_reachable("sonarr", True)
+    t.record_run(duration=0.5, failures=0, now=1234.0)
+    assert t.ready is True
+    body, ctype = t.render()
+    assert isinstance(body, bytes)
+    assert isinstance(ctype, str)
