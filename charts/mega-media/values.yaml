@@ -623,7 +623,11 @@ plex:
   config:
     path: /config
     storageClassName: standard
-    size: 1Gi
+    # Plex keeps metadata, artwork/thumbnails, its SQLite databases AND daily DB
+    # backups here. 1Gi fills fast and starves thumbnail/artwork generation once
+    # the library grows — default to a realistic size. storageClassName should
+    # allow volume expansion so this can grow further without data loss.
+    size: 30Gi
   transcode:
     path: /transcode
     storageClassName: standard
