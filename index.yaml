@@ -3,6 +3,17 @@ entries:
   mega-media:
   - apiVersion: v2
     appVersion: 0.9.0
+    created: "2026-07-19T00:03:56.713250969Z"
+    description: Single-node homelab media stack (Sonarr/Radarr/Lidarr/Readarr/Prowlarr
+      + SABnzbd + Jellyfin/Plex) with a REST reconciler that cross-wires them.
+    digest: 30734e18b2079ab02ff07cedf7675ce3d21960dafac1c3480b779ff111499b84
+    name: mega-media
+    type: application
+    urls:
+    - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.9.1/mega-media-0.9.1.tgz
+    version: 0.9.1
+  - apiVersion: v2
+    appVersion: 0.9.0
     created: "2026-07-18T23:09:45.136082142Z"
     description: Single-node homelab media stack (Sonarr/Radarr/Lidarr/Readarr/Prowlarr
       + SABnzbd + Jellyfin/Plex) with a REST reconciler that cross-wires them.
@@ -212,4 +223,4 @@ entries:
     urls:
     - https://github.com/realliance/helm-mega-media/releases/download/mega-media-0.1.0/mega-media-0.1.0.tgz
     version: 0.1.0
-generated: "2026-07-18T23:09:45.136229468Z"
+generated: "2026-07-19T00:03:56.713374008Z"
