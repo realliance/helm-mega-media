@@ -59,6 +59,9 @@ spec:
             name: transcode
           - mountPath: /config
             name: config
+          {{- with .extraVolumeMounts }}
+          {{- toYaml . | nindent 10 }}
+          {{- end }}
           envFrom:
           - configMapRef:
               name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
@@ -82,6 +85,9 @@ spec:
       - name: media
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" (merge (dict "name" "media") $) }}
+      {{- with .extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
 {{ with .config -}}
 {{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size ) $contextWithName) }}
 {{- end }}

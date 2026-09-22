@@ -632,6 +632,20 @@ plex:
     path: /transcode
     storageClassName: standard
     size: 1Gi
+  # Extra volumes/mounts for libraries that don't live on the shared `media`
+  # PVC — e.g. a separate, independently-backed-up family archive on RWX
+  # storage, mounted read-only and added in Plex as an "Other Videos" library:
+  #   extraVolumes:
+  #     - name: family
+  #       persistentVolumeClaim:
+  #         claimName: family-media
+  #         readOnly: true
+  #   extraVolumeMounts:
+  #     - name: family
+  #       mountPath: /family
+  #       readOnly: true
+  extraVolumes: []
+  extraVolumeMounts: []
 
 sabnzbd:
   enabled: true
