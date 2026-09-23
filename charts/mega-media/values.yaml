@@ -1088,18 +1088,30 @@ ombi:
     size: 1Gi
   # Probed on / rather than /health — /health also pings Plex and every *arr,
   # so a Radarr blip would otherwise take the whole request UI NotReady.
+  #
+  # The startupProbe owns first boot. Ombi migrates three EF Core contexts
+  # before it binds a port — 104s when measured on a 3-node cluster with the
+  # databases on Ceph-backed Postgres — and while a startupProbe is pending,
+  # liveness and readiness do not run at all. 30 x 10s = 300s, which is also
+  # what this image's own s6 supervisor waits for the port. Set to {} to drop it,
+  # but then give livenessProbe an initialDelaySeconds well past your migration
+  # time or first boot will restart-loop.
+  startupProbe:
+    periodSeconds: 10
+    failureThreshold: 30
+    httpGet:
+      path: /
+      port: http
+  # Only ever evaluated after startupProbe has succeeded, so these stay tight.
   livenessProbe:
-    # First boot migrates three EF Core contexts before Ombi serves anything.
-    initialDelaySeconds: 60
     periodSeconds: 10
     failureThreshold: 6
     httpGet:
       path: /
       port: http
   readinessProbe:
-    initialDelaySeconds: 30
     periodSeconds: 10
-    failureThreshold: 6
+    failureThreshold: 3
     httpGet:
       path: /
       port: http

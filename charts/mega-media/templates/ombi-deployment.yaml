@@ -120,6 +120,21 @@ spec:
               containerPort: {{ .port }}
               protocol: TCP
           {{/*
+          A startupProbe, unlike the *arrs, because Ombi's first boot migrates
+          three EF Core contexts before it binds a port -- measured at 104s on
+          galaxy, against a liveness budget of 60s + 6x10s = 120s. A 16s margin
+          is not a margin: a cold image pull or a future Ombi carrying heavier
+          migrations tips it into a restart loop, and restarting Ombi mid-migration
+          is the last thing anyone wants. While a startupProbe is pending, liveness
+          and readiness are suspended entirely, so the 300s budget below replaces
+          that race with something deliberate. 300s is also what this image's own
+          s6 supervisor allows (s6-notifyoncheck -n 300 -w 1000).
+          */}}
+          {{- with .startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{/*
           Probed on / rather than /health on purpose. Ombi's /health aggregates
           AddOmbiHealthChecks(), which pings Plex and every configured *arr, so a
           brief Radarr blip would take Ombi NotReady and 503 the whole request UI.
