@@ -1058,6 +1058,62 @@ sabnzbd:
     newzbin = ""
     priority = -100
 
+# Ombi — the family-facing media request front-end (https://ombi.io). Talks to
+# the *arrs and Plex over HTTP only and never mounts the shared `media` PVC, so
+# unlike every other workload here it is NOT pinned to the media node.
+#
+# Ombi keeps ALL of its configuration in its own database rather than in files.
+# This chart's job stops at "Ombi is running, with storage and a database"; the
+# auth mode, *arr connections, quality profiles, user roles and notification
+# agents are applied afterwards through Ombi's settings API (luma-homeops owns
+# that bootstrap script).
+ombi:
+  enabled: false
+  image: lscr.io/linuxserver/ombi
+  # Ombi's stable channel. The `development` tag tracks upstream's develop
+  # branch — don't reach for it here, this is the family's front door.
+  tag: 4.53.10
+  pullPolicy: IfNotPresent
+  port: 3579
+  # Optional external secret holding Ombi's API key. Omit it and the chart
+  # generates one — but see the API-key note in CLAUDE.md: only an external
+  # secret stops Argo CD rotating the key on every sync.
+  # apiKey:
+  #   name: api-keys
+  #   key: ombi
+  config:
+    storageClassName: standard
+    # The three Ombi databases live in Postgres, so /config only carries
+    # database.json and Ombi's logs.
+    size: 1Gi
+  # Probed on / rather than /health — /health also pings Plex and every *arr,
+  # so a Radarr blip would otherwise take the whole request UI NotReady.
+  livenessProbe:
+    # First boot migrates three EF Core contexts before Ombi serves anything.
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    failureThreshold: 6
+    httpGet:
+      path: /
+      port: http
+  readinessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    failureThreshold: 6
+    httpGet:
+      path: /
+      port: http
+  resources:
+    # Request and limit decoupled deliberately (same reasoning as Plex/SABnzbd):
+    # Ombi idles small, but first-boot migrations and the Plex/*arr sync jobs
+    # spike it, and pinning request==limit would waste the headroom on a node
+    # whose memory requests are already tight.
+    requests:
+      memory: 256Mi
+      cpu: 100m
+    limits:
+      memory: 768Mi
+
 media:
   storageClassName: standard
   size: 10Gi

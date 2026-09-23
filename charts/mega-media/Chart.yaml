@@ -1,6 +1,6 @@
 apiVersion: v2
 name: mega-media
-description: Single-node homelab media stack (Sonarr/Radarr/Lidarr/Readarr/Prowlarr + SABnzbd + Jellyfin/Plex) with a REST reconciler that cross-wires them.
+description: Single-node homelab media stack (Sonarr/Radarr/Lidarr/Readarr/Prowlarr + SABnzbd + Jellyfin/Plex + Ombi) with a REST reconciler that cross-wires them.
 
 # A chart can be either an 'application' or a 'library' chart.
 #
@@ -15,7 +15,7 @@ type: application
 # This is the chart version. This version number should be incremented each time you make changes
 # to the chart and its templates, including the app version.
 # Versions are expected to follow Semantic Versioning (https://semver.org/)
-version: 0.10.0
+version: 0.11.0
 
 # The stack bundles many upstream apps, so there is no single upstream appVersion
 # to track — this mirrors the chart version rather than the old `helm create`

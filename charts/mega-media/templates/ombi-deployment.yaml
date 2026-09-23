@@ -1,0 +1,157 @@
+{{- with .Values.ombi -}}
+{{- if .enabled -}}
+{{- $contextWithName := merge (dict "name" "ombi") $ -}}
+{{- $apiKey := lower (randAlphaNum 32) -}}
+
+{{- $api_key_secret_name := hasKey . "apiKey" | ternary (get (.apiKey) "name") (printf "%s-api-key" (include "mega-media.name" $contextWithName)) -}}
+{{- $api_key_secret_key := hasKey . "apiKey" | ternary (get (.apiKey) "key") "key" -}}
+
+{{- $db_host := $.Values.postgresql.enabled | ternary (printf "%s-postgresql" $.Release.Name) $.Values.externalPostgres.host -}}
+{{- $db_port := $.Values.postgresql.enabled | ternary "5432" $.Values.externalPostgres.port -}}
+{{- $db_user := $.Values.postgresql.enabled | ternary "postgres" $.Values.externalPostgres.username -}}
+{{- $db_secret_name := $.Values.postgresql.enabled | ternary (printf "%s-postgresql" $.Release.Name) $.Values.externalPostgres.passwordFromSecretKeyRef.name -}}
+{{- $db_secret_key := $.Values.postgresql.enabled | ternary "postgres-password" $.Values.externalPostgres.passwordFromSecretKeyRef.key -}}
+{{- $db_dict := dict "host" $db_host "port" $db_port "user" $db_user "secret_name" $db_secret_name "secret_key" $db_secret_key -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mega-media.name" $contextWithName }}
+  labels:
+    {{- include "mega-media.labels" $contextWithName | nindent 4 }}
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mega-media.selectorLabels" $contextWithName | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # Ombi reads arr-config (PUID/PGID/UMASK/TZ) via envFrom, which never
+        # live-updates; roll the pod when that ConfigMap changes.
+        checksum/config: {{ include (print $.Template.BasePath "/arr-config.yaml") $ | sha256sum }}
+        {{- with $.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mega-media.labels" $contextWithName | nindent 8 }}
+        {{- with $.Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{/*
+      Deliberately NO nodeName and NO sameNodePodAffinity. Ombi is a request
+      front-end: it talks to the *arrs and Plex over HTTP and never mounts the
+      ReadWriteOnce `media` PVC, so nothing forces it onto the media node. The
+      reconciler (reconciler-workload.yaml) is the same shape. Adding the pin
+      here would only shrink the schedulable set for no benefit.
+      */}}
+      securityContext:
+        {{- toYaml $.Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-db
+          image: "{{ $.Values.psqlClient.image }}:{{ $.Values.psqlClient.tag }}"
+          command:
+            - 'sh'
+            - '-e'
+            - '-c'
+            - 'until pg_isready -U "{{ $db_user }}" -h {{ $db_host }} -p {{ $db_port }}; do sleep 1; done'
+        {{/*
+        Three databases, not one. Ombi runs three independent EF Core contexts
+        (OmbiPostgresContext / SettingsPostgresContext / ExternalPostgresContext)
+        and each calls Database.Migrate() on its own connection, so pointing two
+        of them at the same database makes them fight over __EFMigrationsHistory.
+        */}}
+        {{- include "mega-media.initDb" (merge (dict "database" "ombi_main" "db_config" $db_dict) $) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" "ombi_settings" "db_config" $db_dict) $) | nindent 8 }}
+        {{- include "mega-media.initDb" (merge (dict "database" "ombi_external" "db_config" $db_dict) $) | nindent 8 }}
+        {{/*
+        Ombi has no env-var database config: it reads $StoragePath/database.json
+        at startup (Ombi.Extensions.DatabaseExtensions.GetDatabaseConfiguration),
+        and StoragePath is /config in this image. $(DB_PASSWORD) below is kubelet
+        $(VAR) expansion of the env var declared on this container -- NOT shell
+        expansion -- which is how the password reaches the file without being
+        baked into the chart. Same trick as init-myservice in _arr_deployment.tpl.
+        */}}
+        - name: init-database-json
+          image: docker.io/busybox:1
+          command:
+            - 'sh'
+            - '-c'
+            - |
+              cat > /config/database.json <<'EOF'
+              {
+                "OmbiDatabase": {
+                  "Type": "Postgres",
+                  "ConnectionString": "Host={{ $db_host }};Port={{ $db_port }};Database=ombi_main;Username={{ $db_user }};Password=$(DB_PASSWORD)"
+                },
+                "SettingsDatabase": {
+                  "Type": "Postgres",
+                  "ConnectionString": "Host={{ $db_host }};Port={{ $db_port }};Database=ombi_settings;Username={{ $db_user }};Password=$(DB_PASSWORD)"
+                },
+                "ExternalDatabase": {
+                  "Type": "Postgres",
+                  "ConnectionString": "Host={{ $db_host }};Port={{ $db_port }};Database=ombi_external;Username={{ $db_user }};Password=$(DB_PASSWORD)"
+                }
+              }
+              EOF
+              chmod 664 /config/database.json
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $db_secret_name }}
+                  key: {{ $db_secret_key }}
+          volumeMounts:
+            - mountPath: /config
+              name: config
+      containers:
+        - name: ombi
+          image: "{{ .image }}:{{ .tag }}"
+          imagePullPolicy: {{ .pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          {{/*
+          Probed on / rather than /health on purpose. Ombi's /health aggregates
+          AddOmbiHealthChecks(), which pings Plex and every configured *arr, so a
+          brief Radarr blip would take Ombi NotReady and 503 the whole request UI.
+          / only asks whether Ombi itself is serving. /health stays available for
+          an external/blackbox check, where dependency failures are the point.
+          */}}
+          livenessProbe:
+            {{- .livenessProbe | toYaml | nindent 12 }}
+          readinessProbe:
+            {{- .readinessProbe | toYaml | nindent 12 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /config
+              name: config
+          # PUID/PGID/UMASK/TZ. PUID=1000 must agree with podSecurityContext
+          # fsGroup (1000) or this image's runtime user cannot write /config.
+          envFrom:
+            - configMapRef:
+                name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ include "mega-media.name" $contextWithName }}-config
+
+{{ with .config -}}
+{{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size) $contextWithName) }}
+{{- end }}
+
+{{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
+{{ if hasKey . "apiKey" | not }}
+{{ template "mega-media.api-key-secret" (merge (dict "apiKey" $apiKey) $contextWithName) }}
+{{- end }}
+{{- end }}
+{{- end }}
