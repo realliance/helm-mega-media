@@ -40,18 +40,17 @@ class ArrService:
     impl: str                                 # "Sonarr" (Prowlarr's Implementation/ConfigContract prefix)
     url: str                                  # http://mega-sonarr.media.svc.cluster.local:8989
     api_key: str
-    api_version: str                          # "v3" for sonarr/radarr, "v1" for lidarr/readarr/prowlarr
+    api_version: str                          # "v3" for sonarr/radarr, "v1" for lidarr/prowlarr
     root_folder_path: str | None = None       # resolved by helm: defaults to /media/<mediaDir>, overridable via arrs.<svc>.rootFolderPath
     search: dict[str, Any] = field(default_factory=dict)  # syncCategories etc., merged into Prowlarr Application fields
     min_version: str | None = None             # optional known-good floor; below it we warn about possible schema/API drift
 
 
-# Lidarr and Readarr are still on v1; Sonarr and Radarr are on v3.
+# Lidarr is still on v1; Sonarr and Radarr are on v3.
 ARR_API_VERSIONS = {
     "sonarr": "v3",
     "radarr": "v3",
     "lidarr": "v1",
-    "readarr": "v1",
 }
 
 
@@ -190,13 +189,13 @@ def first_profile_id(client: httpx.Client, resource: str) -> int:
 
 
 def root_folder_for_arr(svc: ArrService, client: httpx.Client) -> dict[str, Any]:
-    """Desired RootFolder spec. Sonarr/Radarr accept {path} alone; Lidarr/Readarr
-    require defaultQualityProfileId + defaultMetadataProfileId which can only be
+    """Desired RootFolder spec. Sonarr/Radarr accept {path} alone; Lidarr
+    requires defaultQualityProfileId + defaultMetadataProfileId which can only be
     learned at runtime from the live *arr (their ids depend on what migrations
-    seeded). Readarr additionally needs isCalibreLibrary.
+    seeded).
 
     `path` is resolved by helm into `arrs.<svc>.rootFolderPath` (which defaults
-    to `/media/<mediaDir>` but is overridable). For Lidarr/Readarr the `name`
+    to `/media/<mediaDir>` but is overridable). For Lidarr the `name`
     field is required and shown in the UI; derive it from the path basename."""
     if not svc.root_folder_path:
         raise RuntimeError(f"{svc.name}: rootFolderPath not configured")
@@ -212,8 +211,6 @@ def root_folder_for_arr(svc: ArrService, client: httpx.Client) -> dict[str, Any]
         "defaultNewItemMonitorOption": "all",
         "defaultTags": [],
     }
-    if svc.name == "readarr":
-        return {**common, "isCalibreLibrary": False}
     return common  # lidarr
 
 

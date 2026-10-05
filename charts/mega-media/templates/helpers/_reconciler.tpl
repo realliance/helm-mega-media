@@ -45,7 +45,7 @@ containers:
       - name: METRICS_PORT
         value: {{ $metricsPort | quote }}
       {{- end }}
-      {{- range $name := tuple "sonarr" "radarr" "lidarr" "readarr" "prowlarr" }}
+      {{- range $name := tuple "sonarr" "radarr" "lidarr" "prowlarr" }}
       {{- $svc := get $.Values.arrs $name }}
       {{- if $svc.enabled }}
       {{- $arrName := include "mega-media.name" (merge (dict "name" $svc.name) $) }}

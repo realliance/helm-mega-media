@@ -13,7 +13,7 @@ metadata:
 data:
   config.yaml: |
     arrs:
-{{- range $name := tuple "sonarr" "radarr" "lidarr" "readarr" "prowlarr" }}
+{{- range $name := tuple "sonarr" "radarr" "lidarr" "prowlarr" }}
 {{- $svc := get $.Values.arrs $name -}}
 {{- if $svc.enabled }}
       - name: {{ $name }}

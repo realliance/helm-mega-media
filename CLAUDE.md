@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Purpose
 
-Single Helm chart (`mega-media`) that deploys an entire homelab media stack (Sonarr/Radarr/Lidarr/Readarr/Prowlarr + SABnzbd + Jellyfin/Plex) onto **one node**. The single-node assumption is deliberate: media storage uses `ReadWriteOnce`, so every workload must co-schedule via `podAffinity` (see `mega-media.sameNodePodAffinity` in `_helpers.tpl`). Do not introduce templates that assume multi-node scheduling.
+Single Helm chart (`mega-media`) that deploys an entire homelab media stack (Sonarr/Radarr/Lidarr/Prowlarr + SABnzbd + Jellyfin/Plex) onto **one node**. The single-node assumption is deliberate: media storage uses `ReadWriteOnce`, so every workload must co-schedule via `podAffinity` (see `mega-media.sameNodePodAffinity` in `_helpers.tpl`). Do not introduce templates that assume multi-node scheduling.
 
 ## Dev Environment
 
@@ -61,7 +61,7 @@ Helpers expect `.name` to be set on the context — that's how `mega-media.name`
 
 ### *arr services are generated, not duplicated
 
-`templates/arr-deployments.yaml` ranges over `tuple "sonarr" "radarr" "lidarr" "readarr" "prowlarr"` and calls `mega-media.arr.deployment` (in `_arr_deployment.tpl`) for each enabled service. To add a new *arr-like service, extend that tuple **and** add a matching block under `arrs:` in `values.yaml`. Jellyfin/Plex/SABnzbd have their own per-service template files because they don't share the *arr init/config shape.
+`templates/arr-deployments.yaml` ranges over `tuple "sonarr" "radarr" "lidarr" "prowlarr"` and calls `mega-media.arr.deployment` (in `_arr_deployment.tpl`) for each enabled service. To add a new *arr-like service, extend that tuple **and** add a matching block under `arrs:` in `values.yaml`. Jellyfin/Plex/SABnzbd have their own per-service template files because they don't share the *arr init/config shape.
 
 ### Postgres is mandatory; inline StatefulSet or external
 
@@ -95,7 +95,7 @@ Design invariants to preserve when editing it:
 - **Long-running loop by default.** `main()` runs `reconcile_once()` on a `RECONCILE_INTERVAL` loop (default 300s), reloading `/etc/reconciler/config.yaml` each pass (it's a volume mount, so config-map edits propagate with no restart), handling SIGTERM for a clean shutdown, and serving `/healthz`, `/readyz`, `/metrics` (prometheus, `megamedia_*`) on `METRICS_PORT`. Set `RECONCILE_ONESHOT=1` for a single pass (the bootstrap Job and CronJob mode use this).
 - **Soft-fail per resource.** `reconcile_once()` catches per-*arr and per-resource errors and returns a failures list; `main()`'s loop also wraps each pass in a catch-all so a transient error never kills the process (see `c88e14d`, `fed3f67`, `a680168`). `wait_for_ready` polls `/ping` and *skips* services that never come up rather than aborting.
 - **Version preflight (advisory).** `check_version()` logs each *arr's `/system/status` version every pass and warns if below `arrs.<svc>.minVersion` (a known-good floor). Never gates the reconcile — the REST *contract* is the stability bet.
-- **API versions differ:** sonarr/radarr are `v3`, lidarr/readarr/prowlarr are `v1` (`ARR_API_VERSIONS`). Lidarr/Readarr resolve `defaultQualityProfileId`/`defaultMetadataProfileId` against the live *arr at run time.
+- **API versions differ:** sonarr/radarr are `v3`, lidarr/prowlarr are `v1` (`ARR_API_VERSIONS`). Lidarr resolves `defaultQualityProfileId`/`defaultMetadataProfileId` against the live *arr at run time.
 - Out of scope by design: quality profiles/custom formats (use Recyclarr/Profilarr) and pruning unmanaged rows.
 
 **Chart ↔ reconciler wiring** (three templates, all gated on `reconciler.enabled`):

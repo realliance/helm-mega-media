@@ -141,43 +141,6 @@ arrs:
       syncCategories:
         - 3000
       syncRejectBlocklistedTorrentHashesWhileGrabbing: true
-  readarr:
-    # NOTE: Readarr is EOL — Servarr archived development, so there are no new
-    # releases or security fixes and the upstream images have gone stale (see the
-    # pinning workaround below). Default-disabled for that reason; set
-    # `enabled: true` only if you still need it. Heads-up: on an existing release
-    # that had Readarr running, this default flips it off and the workload is
-    # removed on the next `helm upgrade` — pin `enabled: true` to keep it.
-    enabled: false
-    name: readarr
-    mediaDir: books
-    # hotio doesn't publish a readarr container (their readarr repo was
-    # yanked from ghcr.io — token endpoint returns 403 DENIED for every
-    # tag). linuxserver's floating tags (develop, nightly) currently
-    # ship empty manifest lists, so we pin a known-working versioned
-    # tag. Bump via Renovate or by inspecting
-    #   ghcr.io/v2/linuxserver/readarr/tags/list?n=200
-    image: ghcr.io/linuxserver/readarr
-    tag: nightly-0.1.0.1082-ls47
-    # LSIO's Readarr v0.1.0.1082 rejects AuthenticationMethod=External
-    # (added in newer Servarr versions). Use None — UI is gated by
-    # ingress auth anyway.
-    authenticationMethod: None
-    pullPolicy: IfNotPresent
-    port: 8787
-    # apiKey:
-      # name: api-keys
-      # key: readarr
-    resources:
-      requests:
-        memory: 300Mi
-        cpu: 400m
-      limits:
-        memory: 300Mi
-    search:
-      syncCategories:
-        - 7000
-      syncRejectBlocklistedTorrentHashesWhileGrabbing: true
   prowlarr:
     enabled: true
     name: prowlarr
@@ -1180,7 +1143,7 @@ reconciler:
 metrics:
   enabled: false
   image: ghcr.io/onedr0p/exportarr
-  # Known-good pin. exportarr v2 covers sonarr/radarr/lidarr/readarr/prowlarr/sabnzbd.
+  # Known-good pin. exportarr v2 covers sonarr/radarr/lidarr/prowlarr/sabnzbd.
   tag: v2.2.0
   pullPolicy: IfNotPresent
   # Port exportarr listens on and the Service exposes as `metrics`.

@@ -239,8 +239,8 @@ def test_prowlarr_application_with_empty_search_omits_extra_fields():
 
 
 # ---------------------------------------------------------------------------
-# Root folders: Sonarr/Radarr take just {path}; Lidarr/Readarr need profile
-# ids resolved from the live *arr; Readarr additionally needs isCalibreLibrary.
+# Root folders: Sonarr/Radarr take just {path}; Lidarr needs profile ids
+# resolved from the live *arr.
 # ---------------------------------------------------------------------------
 
 def _profile_handler(req: httpx.Request) -> httpx.Response:
@@ -311,18 +311,6 @@ def test_root_folder_lidarr_derives_name_from_overridden_path():
     assert out["name"] == "lossless"
 
 
-def test_root_folder_readarr_includes_isCalibreLibrary():
-    svc = r.ArrService(
-        name="readarr", impl="Readarr", url="http://b", api_key="k",
-        api_version="v1", root_folder_path="/media/books",
-    )
-    with httpx.Client(transport=httpx.MockTransport(_profile_handler),
-                      base_url="http://b/api/v1") as client:
-        out = r.root_folder_for_arr(svc, client)
-    assert out["isCalibreLibrary"] is False
-    assert out["defaultQualityProfileId"] == 1
-
-
 def test_root_folder_raises_when_path_missing():
     svc = r.ArrService(
         name="sonarr", impl="Sonarr", url="http://s", api_key="k",
@@ -384,12 +372,12 @@ def test_wait_for_ready_returns_only_reachable_services(monkeypatch):
     """One *arr unreachable shouldn't starve the others. wait_for_ready
     returns the subset that became ready; caller filters."""
     reachable = _svc("sonarr", "http://sonarr.test")
-    broken = _svc("readarr", "http://readarr.test")
+    broken = _svc("lidarr", "http://lidarr.test")
 
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.host == "sonarr.test":
             return httpx.Response(200, text="pong")
-        # readarr never comes up
+        # lidarr never comes up
         raise httpx.ConnectError("connection refused", request=req)
 
     # Patch httpx.get to route through a MockTransport-backed client so we
@@ -458,7 +446,7 @@ def test_upsert_raises_on_4xx(monkeypatch):
         return httpx.Response(400, json={"error": "BaseUrl invalid"})
 
     with mock_client(handler) as c, pytest.raises(httpx.HTTPStatusError):
-        r.upsert(c, "applications", {"name": "Readarr"})
+        r.upsert(c, "applications", {"name": "Lidarr"})
 
 
 # ---------------------------------------------------------------------------

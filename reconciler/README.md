@@ -7,17 +7,15 @@ Postgres tables (brittle across *arr version bumps).
 Runs as a CronJob inside the cluster, reads a YAML config rendered from
 `values.yaml` into a ConfigMap, and converges:
 
-- Prowlarr `Applications` (Sonarr/Radarr/Lidarr/Readarr registrations,
+- Prowlarr `Applications` (Sonarr/Radarr/Lidarr registrations,
   including the `arrs.<svc>.search.*` block — syncCategories, anime
   sync flags, blocklisted-hash rejection)
 - Prowlarr `Indexers` (from `arrs.prowlarr.indexers[]`)
 - Prowlarr `DownloadClients` (SABnzbd, if enabled)
 - Each *arr's `DownloadClients` (SABnzbd, if enabled)
 - Each *arr's `RootFolders` (from `arrs.<svc>.mediaDir` →
-  `/media/<mediaDir>`). Lidarr/Readarr resolve their required
-  `defaultQualityProfileId` and `defaultMetadataProfileId` against the
-  live *arr at run time; Readarr additionally gets
-  `isCalibreLibrary: false`.
+  `/media/<mediaDir>`). Lidarr resolves its required
+  `defaultQualityProfileId` and `defaultMetadataProfileId` against the live *arr at run time.
 
 Each resource is keyed by `name` (or `path` for RootFolders); the
 reconciler GETs the list, finds the matching row, and PUTs/POSTs as
