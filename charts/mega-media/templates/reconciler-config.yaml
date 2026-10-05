@@ -29,9 +29,17 @@ data:
         search:
 {{ toYaml $svc.search | indent 10 }}
 {{- end }}
+{{- if $svc.downloadCategory }}
+        downloadCategory: {{ $svc.downloadCategory | quote }}
+{{- end }}
+{{- if $svc.mediaManagement }}
+        mediaManagement:
+{{ toYaml $svc.mediaManagement | indent 10 }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- if .Values.sabnzbd.enabled }}
+{{- $dc := .Values.sabnzbd.downloadClient | default dict }}
     sabnzbd:
       enabled: true
       # *arr download-client APIs reject scheme prefixes here — value
@@ -40,6 +48,16 @@ data:
       host: {{ printf "%s-%s" $releaseName .Values.sabnzbd.name }}.{{ $namespace }}.svc.cluster.local
       port: {{ .Values.sabnzbd.port }}
       apiKeyEnv: SAB_API_KEY
+      {{- /* hasKey, not `default`: 0 (normal) is a real priority, and `default` treats it as empty. */}}
+      recentPriority: {{ hasKey $dc "recentPriority" | ternary $dc.recentPriority -100 }}
+      olderPriority: {{ hasKey $dc "olderPriority" | ternary $dc.olderPriority -100 }}
+{{- end }}
+{{- if and .Values.reconciler.plexNotify.enabled .Values.plex.enabled }}
+    plex:
+      enabled: true
+      host: {{ printf "%s-plex" $releaseName }}.{{ $namespace }}.svc.cluster.local
+      port: {{ .Values.plex.port }}
+      tokenEnv: PLEX_TOKEN
 {{- end }}
     indexers:
 {{- range $i, $indexer := .Values.arrs.prowlarr.indexers }}

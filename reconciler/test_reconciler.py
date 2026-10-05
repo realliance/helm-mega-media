@@ -181,7 +181,7 @@ def test_env_raises_clearly_on_missing(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_sab_download_client_for_arr_shape():
-    out = r.sab_download_client_for_arr("http://sab.svc", 8080, "key123")
+    out = r.sab_download_client_for_arr("prowlarr", "http://sab.svc", 8080, "key123")
     assert out["implementation"] == "Sabnzbd"
     assert out["configContract"] == "SabnzbdSettings"
     fields = {f["name"]: f["value"] for f in out["fields"]}
@@ -189,6 +189,80 @@ def test_sab_download_client_for_arr_shape():
     assert fields["port"] == 8080
     assert fields["apiKey"] == "key123"
     assert fields["category"] == "prowlarr"
+    assert fields["priority"] == -100
+
+
+@pytest.mark.parametrize("arr,cat_field,recent_field,older_field,default_cat", [
+    ("sonarr", "tvCategory", "recentTvPriority", "olderTvPriority", "tv"),
+    ("radarr", "movieCategory", "recentMoviePriority", "olderMoviePriority", "movies"),
+    ("lidarr", "musicCategory", "recentMusicPriority", "olderMusicPriority", "music"),
+])
+def test_sab_download_client_uses_each_arrs_own_field_names(arr, cat_field, recent_field,
+                                                             older_field, default_cat):
+    # An *arr ignores field names it doesn't know, so Sonarr's names sent to
+    # Radarr would "succeed" without ever setting anything.
+    out = r.sab_download_client_for_arr(arr, "sab", 8080, "k", recent_priority=1, older_priority=-100)
+    fields = {f["name"]: f["value"] for f in out["fields"]}
+    assert fields[cat_field] == default_cat
+    assert fields[recent_field] == 1
+    assert fields[older_field] == -100
+    foreign = {"recentTvPriority", "recentMoviePriority", "recentMusicPriority"} - {recent_field}
+    assert not foreign & fields.keys()
+
+
+def test_sab_download_client_category_override():
+    out = r.sab_download_client_for_arr("sonarr", "sab", 8080, "k", category="anime")
+    assert {f["name"]: f["value"] for f in out["fields"]}["tvCategory"] == "anime"
+
+
+PLEX_SCHEMA = [
+    {"implementation": "Webhook", "supportsOnGrab": True},
+    {"implementation": "PlexServer", "configContract": "PlexServerSettings",
+     "supportsOnGrab": False, "supportsOnDownload": True, "supportsOnUpgrade": True,
+     "supportsOnRename": True, "supportsOnSeriesDelete": True, "supportsOnHealthIssue": False},
+]
+
+
+def test_plex_notification_enables_exactly_the_supported_triggers():
+    client = mock_client(lambda req: httpx.Response(200, json=PLEX_SCHEMA))
+    out = r.plex_notification_for_arr(client, "plex.svc", 32400, "tok")
+    assert out["name"] == "Plex" and out["implementation"] == "PlexServer"
+    triggers = {k for k, v in out.items() if k.startswith("on") and v is True}
+    assert triggers == {"onDownload", "onUpgrade", "onRename", "onSeriesDelete"}
+    fields = {f["name"]: f["value"] for f in out["fields"]}
+    assert fields == {"host": "plex.svc", "port": 32400, "useSsl": False,
+                      "authToken": "tok", "updateLibrary": True}
+
+
+def test_plex_notification_raises_when_schema_lacks_plex():
+    client = mock_client(lambda req: httpx.Response(200, json=[{"implementation": "Webhook"}]))
+    with pytest.raises(RuntimeError, match="PlexServer"):
+        r.plex_notification_for_arr(client, "plex.svc", 32400, "tok")
+
+
+def test_media_management_no_write_when_already_converged():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "GET":
+            return httpx.Response(200, json={"id": 1, "importExtraFiles": True, "x": 1})
+        pytest.fail(f"unexpected write: {req.method} {req.url}")
+    assert r.reconcile_media_management(mock_client(handler), {"importExtraFiles": True}) is False
+
+
+def test_media_management_puts_merged_singleton_when_different():
+    sent: list[dict] = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.method == "GET":
+            return httpx.Response(200, json={"id": 1, "importExtraFiles": False,
+                                             "extraFileExtensions": "srt", "keep": "me"})
+        assert req.method == "PUT" and req.url.path.endswith("/config/mediamanagement/1")
+        sent.append(json.loads(req.content))
+        return httpx.Response(202, json=sent[-1])
+
+    desired = {"importExtraFiles": True, "extraFileExtensions": "srt,ass"}
+    assert r.reconcile_media_management(mock_client(handler), desired) is True
+    assert sent == [{"id": 1, "importExtraFiles": True, "extraFileExtensions": "srt,ass",
+                     "keep": "me"}]
 
 
 def test_prowlarr_application_for_arr_shape():
@@ -521,6 +595,60 @@ def test_reconcile_once_upserts_each_edge_when_ready(monkeypatch):
     assert any(p.endswith("/applications") for p in posted)   # prowlarr <- sonarr
     assert any(p.endswith("/downloadclient") for p in posted)  # sab wired in
     assert any(p.endswith("/rootfolder") for p in posted)      # sonarr root folder
+    assert not any(p.endswith("/notification") for p in posted)  # plex off by default
+
+
+def test_reconcile_once_wires_plex_priorities_and_media_management(monkeypatch):
+    for name in ("SONARR", "PROWLARR"):
+        monkeypatch.setenv(f"ARR_{name}_API_KEY", "k")
+    monkeypatch.setenv("SAB_API_KEY", "sabkey")
+    monkeypatch.setenv("PLEX_TOKEN", "plextok")
+    config = {
+        "arrs": [
+            {"name": "sonarr", "url": "http://s", "apiKeyEnv": "ARR_SONARR_API_KEY",
+             "rootFolderPath": "/media/tvshows",
+             "mediaManagement": {"importExtraFiles": True}},
+            {"name": "prowlarr", "url": "http://p", "apiKeyEnv": "ARR_PROWLARR_API_KEY"},
+        ],
+        "sabnzbd": {"enabled": True, "host": "mega-sabnzbd", "port": 8080,
+                    "apiKeyEnv": "SAB_API_KEY", "recentPriority": 1, "olderPriority": -100},
+        "plex": {"enabled": True, "host": "mega-plex", "port": 32400, "tokenEnv": "PLEX_TOKEN"},
+    }
+    bodies: dict[str, list[dict]] = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        path = req.url.path
+        if req.method == "GET":
+            if path.endswith("/system/status"):
+                return httpx.Response(200, json={"version": "4.0.20.3014"})
+            if path.endswith("/notification/schema"):
+                return httpx.Response(200, json=PLEX_SCHEMA)
+            if path.endswith("/config/mediamanagement"):
+                return httpx.Response(200, json={"id": 1, "importExtraFiles": False})
+            return httpx.Response(200, json=[])
+        body = json.loads(req.content)
+        bodies.setdefault(f"{req.url.host}:{req.method}:{path.rsplit('/api/', 1)[-1]}", []).append(body)
+        return httpx.Response(201, json={"id": 1, **body})
+
+    def fake_client(svc: r.ArrService) -> httpx.Client:
+        return httpx.Client(transport=httpx.MockTransport(handler),
+                            base_url=f"{svc.url}/api/{svc.api_version}",
+                            headers={"X-Api-Key": svc.api_key})
+
+    arrs, prowlarr = r.build_services(config)
+    monkeypatch.setattr(r, "wait_for_ready", lambda services, **_k: [*arrs, prowlarr])
+    monkeypatch.setattr(r, "arr_client", fake_client)
+
+    assert r.reconcile_once(config, None) == []
+    sonarr_dc = {f["name"]: f["value"] for f in bodies["s:POST:v3/downloadclient"][0]["fields"]}
+    assert sonarr_dc["recentTvPriority"] == 1 and sonarr_dc["tvCategory"] == "tv"
+    prowlarr_dc = {f["name"]: f["value"] for f in bodies["p:POST:v1/downloadclient"][0]["fields"]}
+    assert prowlarr_dc["category"] == "prowlarr" and prowlarr_dc["priority"] == 1
+    plex = bodies["s:POST:v3/notification"][0]
+    assert plex["onDownload"] is True and plex["name"] == "Plex"
+    assert {f["name"]: f["value"] for f in plex["fields"]}["authToken"] == "plextok"
+    assert bodies["s:PUT:v3/config/mediamanagement/1"][0]["importExtraFiles"] is True
+    assert "p:POST:v1/notification" not in bodies  # prowlarr never gets a Plex connection
 
 
 # ---------------------------------------------------------------------------

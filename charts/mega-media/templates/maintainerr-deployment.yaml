@@ -1,0 +1,82 @@
+{{- with .Values.maintainerr -}}
+{{- if .enabled -}}
+{{- $contextWithName := merge (dict "name" "maintainerr") $ -}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mega-media.name" $contextWithName }}
+  labels:
+    {{- include "mega-media.labels" $contextWithName | nindent 4 }}
+spec:
+  {{/* SQLite on an RWO volume: never two pods at once. */}}
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "mega-media.selectorLabels" $contextWithName | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        # TZ comes from arr-config via envFrom, which never live-updates.
+        checksum/config: {{ include (print $.Template.BasePath "/arr-config.yaml") $ | sha256sum }}
+        {{- with $.Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "mega-media.labels" $contextWithName | nindent 8 }}
+        {{- with $.Values.podLabels }}
+          {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{/*
+      No nodeName / sameNodePodAffinity, like Ombi: Maintainerr only talks to
+      Plex and the *arrs over their APIs (deletes go through Sonarr/Radarr), so
+      it never mounts the ReadWriteOnce media PVC and can run on any node.
+      */}}
+      securityContext:
+        {{- toYaml .securityContext | nindent 8 }}
+      containers:
+        - name: maintainerr
+          image: "{{ .image }}:{{ .tag }}"
+          imagePullPolicy: {{ .pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          env:
+            - name: UI_PORT
+              value: {{ .port | quote }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
+          {{- with .startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /opt/data
+              name: config
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: {{ include "mega-media.name" $contextWithName }}-config
+
+{{ with .config -}}
+{{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size) $contextWithName) }}
+{{- end }}
+
+{{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port) $contextWithName) }}
+{{- end }}
+{{- end }}

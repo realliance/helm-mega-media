@@ -44,6 +44,8 @@ class ArrService:
     root_folder_path: str | None = None       # resolved by helm: defaults to /media/<mediaDir>, overridable via arrs.<svc>.rootFolderPath
     search: dict[str, Any] = field(default_factory=dict)  # syncCategories etc., merged into Prowlarr Application fields
     min_version: str | None = None             # optional known-good floor; below it we warn about possible schema/API drift
+    download_category: str | None = None       # SABnzbd category this *arr files jobs under; None = DEFAULT_CATEGORIES
+    media_management: dict[str, Any] = field(default_factory=dict)  # keys merged into /config/mediamanagement
 
 
 # Lidarr is still on v1; Sonarr and Radarr are on v3.
@@ -134,24 +136,101 @@ def upsert(client: httpx.Client, resource: str, desired: dict[str, Any],
         log.info("created %s: %s", resource, identity)
 
 
-def sab_download_client_for_arr(sab_url: str, sab_port: int, sab_api_key: str) -> dict[str, Any]:
-    """Schema for adding SABnzbd as a download client on an *arr."""
+# SABnzbd download-client field names differ per *arr: Sonarr says "Tv",
+# Radarr "Movie", Lidarr "Music", and Prowlarr has a single category/priority.
+# An *arr silently ignores field names it doesn't know, so sending Sonarr's
+# names to Radarr looks like it works while the setting never lands.
+SAB_FIELDS: dict[str, tuple[str, str | None, str | None]] = {
+    # name: (category field, recent-priority field, older-priority field)
+    "sonarr": ("tvCategory", "recentTvPriority", "olderTvPriority"),
+    "radarr": ("movieCategory", "recentMoviePriority", "olderMoviePriority"),
+    "lidarr": ("musicCategory", "recentMusicPriority", "olderMusicPriority"),
+    "prowlarr": ("category", "priority", None),
+}
+
+DEFAULT_CATEGORIES = {"sonarr": "tv", "radarr": "movies", "lidarr": "music", "prowlarr": "prowlarr"}
+
+
+def sab_download_client_for_arr(arr_name: str, sab_url: str, sab_port: int, sab_api_key: str,
+                                category: str | None = None,
+                                recent_priority: int = -100,
+                                older_priority: int = -100) -> dict[str, Any]:
+    """Schema for adding SABnzbd as a download client on an *arr.
+
+    Priorities are SABnzbd job priorities: -100 = the category's default,
+    -1 low, 0 normal, 1 high, 2 force. "Recent" is anything aired/released in
+    the last 14 days — raising it lets new episodes overtake a backlog."""
+    cat_field, recent_field, older_field = SAB_FIELDS.get(arr_name, SAB_FIELDS["prowlarr"])
+    fields: list[dict[str, Any]] = [
+        {"name": "host", "value": sab_url},
+        {"name": "port", "value": sab_port},
+        {"name": "useSsl", "value": False},
+        {"name": "apiKey", "value": sab_api_key},
+        {"name": cat_field, "value": category or DEFAULT_CATEGORIES.get(arr_name, arr_name)},
+    ]
+    if recent_field:
+        fields.append({"name": recent_field, "value": recent_priority})
+    if older_field:
+        fields.append({"name": older_field, "value": older_priority})
     return {
         "enable": True,
         "name": "SABnzbd",
         "implementation": "Sabnzbd",
         "configContract": "SabnzbdSettings",
         "priority": 1,
-        "fields": [
-            {"name": "host", "value": sab_url},
-            {"name": "port", "value": sab_port},
-            {"name": "useSsl", "value": False},
-            {"name": "apiKey", "value": sab_api_key},
-            {"name": "category", "value": "prowlarr"},
-            {"name": "recentTvPriority", "value": -100},
-            {"name": "olderTvPriority", "value": -100},
-        ],
+        "fields": fields,
     }
+
+
+def plex_notification_for_arr(client: httpx.Client, host: str, port: int,
+                              token: str) -> dict[str, Any]:
+    """Desired "Plex" connection (Settings > Connect) so the *arr tells Plex to
+    rescan the affected folder on import, upgrade, rename and delete — instead
+    of Plex only noticing on its own periodic scan.
+
+    Which events the PlexServer notifier supports differs per *arr and version
+    (Sonarr has onImportComplete, Lidarr has onReleaseImport/onTrackRetag...),
+    so they are read from the live /notification/schema rather than hardcoded:
+    every supportsOn<X> flag the schema sets becomes on<X> = True."""
+    schema = client.get("/notification/schema").raise_for_status().json()
+    plex = next((s for s in schema if s.get("implementation") == "PlexServer"), None)
+    if not plex:
+        raise RuntimeError("no PlexServer notification in this *arr's schema")
+    triggers = {
+        "on" + k[len("supportsOn"):]: True
+        for k, v in plex.items()
+        if k.startswith("supportsOn") and v is True
+    }
+    return {
+        "name": "Plex",
+        "implementation": "PlexServer",
+        "configContract": plex.get("configContract", "PlexServerSettings"),
+        **triggers,
+        "fields": [
+            {"name": "host", "value": host},
+            {"name": "port", "value": port},
+            {"name": "useSsl", "value": False},
+            {"name": "authToken", "value": token},
+            {"name": "updateLibrary", "value": True},
+        ],
+        "tags": [],
+    }
+
+
+def reconcile_media_management(client: httpx.Client, desired: dict[str, Any]) -> bool:
+    """Merge `desired` keys into /config/mediamanagement (e.g. importExtraFiles,
+    extraFileExtensions). A config resource is a singleton: GET it, PUT it back
+    with our keys only when something actually differs, so a steady-state loop
+    makes no writes. Returns True when it wrote."""
+    current = client.get("/config/mediamanagement").raise_for_status().json()
+    if all(current.get(k) == v for k, v in desired.items()):
+        return False
+    r = client.put(f"/config/mediamanagement/{current['id']}", json={**current, **desired})
+    if r.status_code >= 400:
+        log.error("PUT config/mediamanagement failed: %s %s", r.status_code, r.text)
+        r.raise_for_status()
+    log.info("updated config/mediamanagement: %s", ", ".join(sorted(desired)))
+    return True
 
 
 def prowlarr_application_for_arr(svc: ArrService, prowlarr_url: str) -> dict[str, Any]:
@@ -293,6 +372,8 @@ def build_services(config: dict[str, Any]) -> tuple[list[ArrService], ArrService
             root_folder_path=raw.get("rootFolderPath"),
             search=raw.get("search") or {},
             min_version=raw.get("minVersion"),
+            download_category=raw.get("downloadCategory"),
+            media_management=raw.get("mediaManagement") or {},
         )
         if raw["name"] == "prowlarr":
             prowlarr = svc
@@ -416,13 +497,23 @@ def reconcile_once(config: dict[str, Any], telemetry: Telemetry | None = None) -
         )
 
     sab = config.get("sabnzbd")
-    sab_dc: dict[str, Any] | None = None
-    if sab and sab.get("enabled", True):
-        sab_dc = sab_download_client_for_arr(
+    sab_enabled = bool(sab and sab.get("enabled", True))
+    sab_api_key = env(sab["apiKeyEnv"]) if sab_enabled else ""
+
+    def sab_dc(svc: ArrService) -> dict[str, Any]:
+        return sab_download_client_for_arr(
+            svc.name,
             sab_url=sab["host"],
             sab_port=sab["port"],
-            sab_api_key=env(sab["apiKeyEnv"]),
+            sab_api_key=sab_api_key,
+            category=svc.download_category,
+            recent_priority=int(sab.get("recentPriority", -100)),
+            older_priority=int(sab.get("olderPriority", -100)),
         )
+
+    plex = config.get("plex") or {}
+    plex_enabled = bool(plex.get("enabled"))
+    plex_token = env(plex["tokenEnv"]) if plex_enabled else ""
 
     # Wrap individual upserts so one bad row (e.g. Prowlarr rejecting an
     # Application because the target *arr's API schema is incompatible)
@@ -448,14 +539,28 @@ def reconcile_once(config: dict[str, Any], telemetry: Telemetry | None = None) -
                            context="prowlarr")
             for indexer in config.get("indexers", []):
                 try_upsert(c, "indexer", prowlarr_indexer(indexer), context="prowlarr")
-            if sab_dc:
-                try_upsert(c, "downloadclient", sab_dc, context="prowlarr")
+            if sab_enabled:
+                try_upsert(c, "downloadclient", sab_dc(prowlarr), context="prowlarr")
 
     for arr in arrs:
         with arr_client(arr) as c:
             check_version(c, arr)
-            if sab_dc:
-                try_upsert(c, "downloadclient", sab_dc, context=arr.name)
+            if sab_enabled:
+                try_upsert(c, "downloadclient", sab_dc(arr), context=arr.name)
+            if plex_enabled:
+                try:
+                    upsert(c, "notification",
+                           plex_notification_for_arr(c, plex["host"], int(plex.get("port", 32400)),
+                                                     plex_token))
+                except (httpx.HTTPError, RuntimeError) as e:
+                    log.warning("%s: plex notification skipped: %s", arr.name, e)
+                    failures.append(f"{arr.name}:notification/Plex")
+            if arr.media_management:
+                try:
+                    reconcile_media_management(c, arr.media_management)
+                except (httpx.HTTPError, RuntimeError, KeyError) as e:
+                    log.warning("%s: media management skipped: %s", arr.name, e)
+                    failures.append(f"{arr.name}:config/mediamanagement")
             # Root folders depend on profile ids the *arr seeds during its
             # first migration. On a brand-new install the GET /qualityprofile
             # call has occasionally returned empty even after /ping succeeded;

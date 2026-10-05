@@ -12,7 +12,13 @@ Runs as a CronJob inside the cluster, reads a YAML config rendered from
   sync flags, blocklisted-hash rejection)
 - Prowlarr `Indexers` (from `arrs.prowlarr.indexers[]`)
 - Prowlarr `DownloadClients` (SABnzbd, if enabled)
-- Each *arr's `DownloadClients` (SABnzbd, if enabled)
+- Each *arr's `DownloadClients` (SABnzbd, if enabled), with that *arr's own
+  category/priority field names and the priorities from
+  `sabnzbd.downloadClient`
+- Optionally a "Plex" Connect notification on Sonarr/Radarr/Lidarr
+  (`reconciler.plexNotify`), triggers taken from the live notification schema
+- Optionally `arrs.<svc>.mediaManagement` keys in Settings > Media
+  Management (written only when a key differs)
 - Each *arr's `RootFolders` (from `arrs.<svc>.mediaDir` →
   `/media/<mediaDir>`). Lidarr resolves its required
   `defaultQualityProfileId` and `defaultMetadataProfileId` against the live *arr at run time.
@@ -38,8 +44,9 @@ LOG_LEVEL=DEBUG python reconciler.py
 
 ## Out of scope (intentional)
 
-- Quality profiles, custom formats, naming. Use Recyclarr/Profilarr for
-  those — they're the right tool, and this reconciler doesn't try to be.
+- Quality profiles, custom formats, naming. The chart's optional
+  `recyclarr` component owns those — it's the right tool, and this
+  reconciler doesn't try to be.
 - Removing unmanaged resources. Reconciler is additive only: anything the
   user creates via the UI is left alone. A strict mode that prunes
   unmanaged rows is plausible but blast-radius-sensitive, deferred to v3.

@@ -67,6 +67,11 @@ arrs:
     # Defaults to /media/<mediaDir>; set this if you mount media elsewhere
     # or want a sub-path (e.g. /media/tvshows/anime).
     # rootFolderPath: /media/tvshows
+    # Any *arr (sonarr/radarr/lidarr, and downloadCategory on prowlarr) also takes:
+    #   downloadCategory: tv          # SABnzbd category; default tv/movies/music/prowlarr
+    #   mediaManagement:              # merged key-by-key into Settings > Media Management;
+    #     importExtraFiles: true      # written only when a key differs. Quality profiles,
+    #     extraFileExtensions: srt,ass  # custom formats and naming belong to `recyclarr`.
     image: ghcr.io/hotio/sonarr
     # Version hardening: `tag` floats on a major here (v4). For reproducibility
     # pin a specific tag or @sha256 digest, and set `minVersion` to the
@@ -626,6 +631,15 @@ sabnzbd:
   # apiKey:
     # name: api-keys
     # key: sabnzbd
+  # How the reconciler wires SABnzbd into each *arr (Settings > Download Clients).
+  # Priorities are SABnzbd job priorities: -100 = the category's default,
+  # -1 low, 0 normal, 1 high, 2 force. "Recent" = aired/released within 14
+  # days; setting it to 1 lets new episodes overtake a backlog in the queue.
+  # Categories default to tv / movies / music / prowlarr — override per *arr
+  # with arrs.<svc>.downloadCategory.
+  downloadClient:
+    recentPriority: -100
+    olderPriority: -100
   livenessProbe:
     httpGet:
       path: /
@@ -1103,6 +1117,95 @@ ombi:
     limits:
       memory: 768Mi
 
+# Recyclarr (https://recyclarr.dev) syncs TRaSH-Guides quality profiles, custom
+# formats, quality sizes, naming and propers/repacks handling into Sonarr and
+# Radarr — the part the reconciler deliberately leaves alone. It runs as a
+# post-install/post-upgrade hook Job (an Argo CD PostSync hook), so a config
+# change applies on the next deploy and nothing polls. Stateless: Recyclarr v8
+# adopts existing profiles/custom formats by name, so no volume is needed.
+recyclarr:
+  enabled: false
+  image: ghcr.io/recyclarr/recyclarr
+  # Pin a full version; v8.x is the schema `config` below is written against.
+  tag: 8.7.2
+  pullPolicy: IfNotPresent
+  # recyclarr.yml contents (required when enabled). SONARR_API_KEY and
+  # RADARR_API_KEY are injected from the *arrs' own api-key secrets:
+  #   sonarr:
+  #     sonarr:
+  #       base_url: http://<release>-sonarr.<namespace>.svc.cluster.local:8989
+  #       api_key: !env_var SONARR_API_KEY
+  #       quality_profiles:
+  #         - trash_id: 72dae194fc92bf828f32cde7744e51a1   # TRaSH WEB-1080p
+  config: ""
+  # settings.yml contents (optional). Pin the guide so TRaSH changes arrive as
+  # a reviewed bump rather than on whatever day the Job next runs:
+  #   resource_providers:
+  #     - name: trash-guides-pinned
+  #       type: trash-guides
+  #       clone_url: https://github.com/TRaSH-Guides/Guides.git
+  #       reference: <commit sha>
+  #       replace_default: true
+  settings: ""
+  # Optional cron schedule for a periodic sync that reverts UI edits to the
+  # managed profiles. "" = run only as the deploy hook.
+  schedule: ""
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
+    limits:
+      memory: 512Mi
+
+# Maintainerr (https://maintainerr.info): rule-based library cleanup across
+# Plex and the *arrs — e.g. "delete any season that isn't the show's latest".
+# Matches go into a Plex collection (e.g. "Leaving soon") for a grace period
+# before the action runs. API-only (deletes go through Sonarr/Radarr), so it
+# never mounts the media PVC and is not pinned to the media node. Its web UI has
+# NO authentication of its own — only expose it behind an auth proxy.
+maintainerr:
+  enabled: false
+  image: ghcr.io/maintainerr/maintainerr
+  tag: 3.30.1
+  pullPolicy: IfNotPresent
+  port: 6246
+  # The image runs as `node` (uid 1000); /opt/data (SQLite + logs) must be
+  # writable by it.
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+  config:
+    storageClassName: standard
+    size: 1Gi
+  # First boot runs database migrations before the port opens.
+  startupProbe:
+    periodSeconds: 10
+    failureThreshold: 30
+    httpGet:
+      path: /api/health/ready
+      port: http
+  livenessProbe:
+    periodSeconds: 30
+    failureThreshold: 3
+    tcpSocket:
+      port: http
+  # /api/health/ready also pings Maintainerr's database (what its own Docker
+  # HEALTHCHECK uses).
+  readinessProbe:
+    periodSeconds: 15
+    failureThreshold: 3
+    httpGet:
+      path: /api/health/ready
+      port: http
+  resources:
+    requests:
+      memory: 192Mi
+      cpu: 50m
+    limits:
+      memory: 768Mi
+
 media:
   storageClassName: standard
   size: 10Gi
@@ -1134,6 +1237,16 @@ reconciler:
       cpu: 50m
     limits:
       memory: 128Mi
+  # Register Plex as a "Connect" target in Sonarr/Radarr/Lidarr so each import,
+  # upgrade, rename and delete triggers a targeted Plex library scan, instead of
+  # Plex finding new files only on its own scan. Needs plex.enabled and a Plex
+  # token (X-Plex-Token) in an existing Secret. Triggers are read from each
+  # *arr's live notification schema, so new *arr versions need no chart change.
+  plexNotify:
+    enabled: false
+    tokenFromSecretKeyRef:
+      name: ""
+      key: ""
 
 # Prometheus metrics via exportarr sidecars — one per enabled *arr and one for
 # SABnzbd. Default OFF. When enabled, each *arr/SAB pod gains an exportarr

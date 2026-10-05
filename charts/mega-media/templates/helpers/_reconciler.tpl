@@ -74,6 +74,12 @@ containers:
           secretKeyRef:
             {{- toYaml $indexer.apiKeyFromSecretKeyRef | nindent 14 }}
       {{- end }}
+      {{- if and $.Values.reconciler.plexNotify.enabled $.Values.plex.enabled }}
+      - name: PLEX_TOKEN
+        valueFrom:
+          secretKeyRef:
+            {{- toYaml $.Values.reconciler.plexNotify.tokenFromSecretKeyRef | nindent 14 }}
+      {{- end }}
     {{- if not $oneshot }}
     ports:
       - name: metrics

@@ -87,7 +87,9 @@ The external-secret branch exists specifically because Argo CD doesn't distingui
 The old `sync-prowlarr-hook.yaml` Job that `psql`'d directly into `prowlarr_main` is **gone** (replaced in `8e0c258`). Cross-wiring is now a standalone Python app under `reconciler/` (`reconciler.py` + pytest `test_reconciler.py`, its own `Dockerfile`, published to `ghcr.io/<repo>/reconciler`). It talks to the documented *arr/Prowlarr **REST APIs**, which are stable across major versions where the DB schema is not. It converges:
 
 - Prowlarr `Applications` (the other *arrs, including each `arrs.<svc>.search` block — syncCategories etc.), `Indexers` (from `arrs.prowlarr.indexers[]`), and `DownloadClients` (SABnzbd)
-- Each *arr's `DownloadClients` (SABnzbd) and `RootFolders` (`/media/<mediaDir>`, or `arrs.<svc>.rootFolderPath`)
+- Each *arr's `DownloadClients` (SABnzbd) and `RootFolders` (`/media/<mediaDir>`, or `arrs.<svc>.rootFolderPath`). SAB field names differ per *arr (`SAB_FIELDS`: `tvCategory`/`recentTvPriority` vs `movieCategory`/`recentMoviePriority` vs `musicCategory`…, Prowlarr a single `category`/`priority`) — an *arr silently ignores names it doesn't know, so never send one *arr's names to another. Priorities from `sabnzbd.downloadClient`, categories from `arrs.<svc>.downloadCategory` (default `DEFAULT_CATEGORIES`).
+- Optional: a "Plex" Connect notification on sonarr/radarr/lidarr (`reconciler.plexNotify`, token via `PLEX_TOKEN` env from a secret). Its `on<Event>` triggers are read from the live `/notification/schema` (`supportsOn<Event>`), never hardcoded.
+- Optional: `arrs.<svc>.mediaManagement` keys merged into the `/config/mediamanagement` singleton — GET, compare key by key, PUT only on a difference (so the steady-state loop writes nothing).
 
 Design invariants to preserve when editing it:
 
@@ -96,7 +98,12 @@ Design invariants to preserve when editing it:
 - **Soft-fail per resource.** `reconcile_once()` catches per-*arr and per-resource errors and returns a failures list; `main()`'s loop also wraps each pass in a catch-all so a transient error never kills the process (see `c88e14d`, `fed3f67`, `a680168`). `wait_for_ready` polls `/ping` and *skips* services that never come up rather than aborting.
 - **Version preflight (advisory).** `check_version()` logs each *arr's `/system/status` version every pass and warns if below `arrs.<svc>.minVersion` (a known-good floor). Never gates the reconcile — the REST *contract* is the stability bet.
 - **API versions differ:** sonarr/radarr are `v3`, lidarr/prowlarr are `v1` (`ARR_API_VERSIONS`). Lidarr resolves `defaultQualityProfileId`/`defaultMetadataProfileId` against the live *arr at run time.
-- Out of scope by design: quality profiles/custom formats (use Recyclarr/Profilarr) and pruning unmanaged rows.
+- Out of scope by design: quality profiles/custom formats/naming (the chart's optional `recyclarr` component owns those) and pruning unmanaged rows.
+
+### Recyclarr and Maintainerr (optional components, default off)
+
+- `templates/recyclarr.yaml` — `recyclarr.config`/`settings` (raw recyclarr.yml / settings.yml strings) into a ConfigMap, run by a `post-install,post-upgrade` hook Job (weight 5, after the reconciler bootstrap at 0; Argo CD runs it as PostSync) plus an optional CronJob (`recyclarr.schedule`). Stateless on purpose: Recyclarr v8 adopts existing profiles/CFs by name, so the pod only needs emptyDirs; the ConfigMap is copied into a writable `/config` first. `SONARR_API_KEY`/`RADARR_API_KEY` come from the *arrs' own api-key secrets (same external-vs-generated ternary as everywhere else) for `!env_var` in the config.
+- `templates/maintainerr-deployment.yaml` — API-only cleanup tool (Plex + *arrs), so like Ombi it is **not** node-pinned and never mounts `media`. SQLite in `/opt/data` on its config PVC (uid 1000). Its UI has no auth: only expose it behind a proxy.
 
 **Chart ↔ reconciler wiring** (three templates, all gated on `reconciler.enabled`):
 

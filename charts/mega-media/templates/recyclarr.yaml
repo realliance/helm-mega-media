@@ -1,0 +1,138 @@
+{{- if .Values.recyclarr.enabled -}}
+{{- $nameInTable := merge (dict "name" "recyclarr") . -}}
+{{- $fullName := include "mega-media.name" $nameInTable -}}
+{{- if not .Values.recyclarr.config }}
+{{- fail "recyclarr.enabled needs recyclarr.config (the recyclarr.yml contents)" }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+data:
+  recyclarr.yml: |
+    {{- .Values.recyclarr.config | nindent 4 }}
+  {{- with .Values.recyclarr.settings }}
+  settings.yml: |
+    {{- . | nindent 4 }}
+  {{- end }}
+{{/*
+Sync Job: a post-install/post-upgrade hook, which Argo CD runs as a PostSync
+hook — i.e. after every sync of this release, once the *arrs are healthy. So a
+config change applies on deploy and nothing polls. Recyclarr v8 adopts existing
+profiles and custom formats by name, so the Job is stateless (emptyDir only).
+*/}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullName }}-sync
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    # After the reconciler bootstrap (weight 0) has wired the *arrs together.
+    "helm.sh/hook-weight": "5"
+    # Kept after success so `kubectl logs job/<release>-recyclarr-sync` shows the
+    # last sync; the TTL cleans it up and the next sync replaces it.
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels:
+        {{- include "mega-media.labels" $nameInTable | nindent 8 }}
+    spec:
+      {{- include "mega-media.recyclarr.podspec" . | nindent 6 }}
+{{- if .Values.recyclarr.schedule }}
+{{/* Optional periodic sync: reverts UI edits to the managed profiles/CFs. */}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "mega-media.labels" $nameInTable | nindent 4 }}
+spec:
+  schedule: {{ .Values.recyclarr.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            {{- include "mega-media.labels" $nameInTable | nindent 12 }}
+        spec:
+          {{- include "mega-media.recyclarr.podspec" . | nindent 10 }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Pod spec shared by the hook Job and the optional CronJob. Injects SONARR_API_KEY
+and RADARR_API_KEY from the same secrets the *arrs use (external `apiKey` or the
+chart-generated <release>-<svc>-api-key), for `!env_var` in recyclarr.yml.
+*/}}
+{{- define "mega-media.recyclarr.podspec" -}}
+{{- $fullName := include "mega-media.name" (merge (dict "name" "recyclarr") .) -}}
+restartPolicy: Never
+{{- with .Values.imagePullSecrets }}
+imagePullSecrets:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+securityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+containers:
+  - name: recyclarr
+    image: "{{ .Values.recyclarr.image }}:{{ .Values.recyclarr.tag }}"
+    imagePullPolicy: {{ .Values.recyclarr.pullPolicy }}
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop: [ALL]
+    # The ConfigMap is read-only and Recyclarr writes its guide clone, logs and
+    # state next to its config, so seed a writable emptyDir and run from there.
+    command: ["sh", "-c"]
+    args:
+      - cp /seed/*.yml /config/ && exec recyclarr sync
+    env:
+      - name: RECYCLARR_CONFIG_DIR
+        value: /config
+      {{- range $name := tuple "sonarr" "radarr" }}
+      {{- $svc := get $.Values.arrs $name }}
+      {{- if $svc.enabled }}
+      {{- $arrName := include "mega-media.name" (merge (dict "name" $svc.name) $) }}
+      - name: {{ upper $name }}_API_KEY
+        valueFrom:
+          secretKeyRef:
+            name: {{ hasKey $svc "apiKey" | ternary (default "" (get (default dict $svc.apiKey) "name")) (printf "%s-api-key" $arrName) }}
+            key: {{ hasKey $svc "apiKey" | ternary (default "" (get (default dict $svc.apiKey) "key")) "key" }}
+      {{- end }}
+      {{- end }}
+    resources:
+      {{- toYaml .Values.recyclarr.resources | nindent 6 }}
+    volumeMounts:
+      - name: seed
+        mountPath: /seed
+      - name: config
+        mountPath: /config
+      - name: tmp
+        mountPath: /tmp
+volumes:
+  - name: seed
+    configMap:
+      name: {{ $fullName }}
+  - name: config
+    emptyDir: {}
+  - name: tmp
+    emptyDir: {}
+{{- end -}}
