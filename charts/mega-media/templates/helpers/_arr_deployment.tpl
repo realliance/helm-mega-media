@@ -132,9 +132,17 @@ spec:
           volumeMounts:
           - mountPath: /media
             name: media
+          {{- if ne (toString .Values.arrs.persistAppData) "false" }}
+          # Whole app-data dir on the config PVC: MediaCover (poster cache), the
+          # DataProtection keys in asp/, logs. config.xml is rewritten by the
+          # init container on every start either way.
+          - mountPath: /config
+            name: config
+          {{- else }}
           - mountPath: /config/config.xml
             name: config
             subPath: config.xml
+          {{- end }}
         {{- if .Values.metrics.enabled }}
         # exportarr: scrapes this *arr over localhost with the same API key the
         # app uses ($api_key_secret_* resolved above — external + generated both

@@ -39,6 +39,11 @@ externalPostgres:
     key: "psql-key"
 
 arrs:
+  # Mount the config PVC at /config instead of only /config/config.xml, so the
+  # app-data dir survives restarts. With false, MediaCover (every poster and
+  # fanart image) and the login cookie keys live in the container layer and
+  # vanish on each pod restart.
+  persistAppData: true
   config:
     storageClassName: standard
     size: 1Gi
@@ -681,6 +686,15 @@ sabnzbd:
     path: /config
     storageClassName: standard
     size: 1Gi
+  # Optional scratch volume for in-progress downloads. Point the ini's
+  # download_dir at mountPath to download, par2-repair and unpack on fast
+  # storage while complete_dir stays on the media volume (imports remain
+  # same-filesystem moves/hardlinks). Size it for the largest job you grab.
+  incomplete:
+    enabled: false
+    mountPath: /incomplete
+    storageClassName: standard
+    size: 50Gi
   servers:
     - name: news.eweka.nl
       enabled: true

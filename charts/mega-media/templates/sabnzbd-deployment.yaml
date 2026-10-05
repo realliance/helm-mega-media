@@ -102,6 +102,10 @@ spec:
             name: media
           - mountPath: /config
             name: config
+          {{- if and .incomplete .incomplete.enabled }}
+          - mountPath: {{ .incomplete.mountPath | default "/incomplete" }}
+            name: incomplete
+          {{- end }}
           envFrom:
           - configMapRef:
               name: {{ include "mega-media.name" (merge (dict "name" "arr-config") $) }}
@@ -141,9 +145,18 @@ spec:
       - name: config
         persistentVolumeClaim:
           claimName: {{ include "mega-media.name" $contextWithName }}-config
+      {{- if and .incomplete .incomplete.enabled }}
+      - name: incomplete
+        persistentVolumeClaim:
+          claimName: {{ include "mega-media.name" $contextWithName }}-incomplete
+      {{- end }}
 
 {{ with .config -}}
 {{ template "mega-media.config.pvc" (merge (dict "storageClassName" .storageClassName "size" .size ) $contextWithName) }}
+{{- end }}
+
+{{ if and .incomplete .incomplete.enabled -}}
+{{ template "mega-media.incomplete.pvc" (merge (dict "storageClassName" .incomplete.storageClassName "size" .incomplete.size) $contextWithName) }}
 {{- end }}
 
 {{ template "mega-media.service" (merge (dict "port" .port "targetPort" .port "metricsSidecar" true) $contextWithName) }}
