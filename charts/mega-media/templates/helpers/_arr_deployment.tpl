@@ -47,10 +47,16 @@ spec:
       {{- if .Values.nodeName }}
       nodeName: {{ .Values.nodeName | quote }}
       {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if not .Values.nodeSelector }}
       affinity:
         {{- include "mega-media.sameNodePodAffinity" . | nindent 8 }}
+      {{- end }}
       # https://wiki.servarr.com/sonarr/postgres-setup
       initContainers:
         - name: wait-for-db

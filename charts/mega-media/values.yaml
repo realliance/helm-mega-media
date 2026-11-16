@@ -6,7 +6,19 @@
 # Will roughly override the pod affinity by forcing a given node,
 # but is handy for scenarios where you are limited in your
 # gpu resource options and need to force it.
+# Prefer nodeSelector: nodeName bypasses the scheduler, so a pod that does not
+# fit (memory, or a GPU whose device plugin has not registered yet) is
+# rejected by the kubelet, and its ReplicaSet replaces it at once, thousands
+# of times.
 nodeName: ""
+
+# Optional: node labels that Plex, Jellyfin, SABnzbd, the *arrs and the inline
+# Postgres must match, e.g. {kubernetes.io/hostname: node1}. Placement goes
+# through the scheduler, so a pod that does not fit stays Pending. It replaces
+# the same-node podAffinity: the selector already co-locates the pods. Under
+# Recreate rollouts, that affinity can leave every pod on the node Pending,
+# waiting for another.
+nodeSelector: {}
 
 postgresql:
   enabled: true
